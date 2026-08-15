@@ -3,7 +3,7 @@ import { Link, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import CampusMap from '../components/CampusMap'
 import Loader from '../components/Loader'
-import { getLocation } from '../services/api'
+import { getLocation, getImageUrl } from '../services/api'
 
 export default function LocationDetails() {
   const { id } = useParams()
@@ -39,11 +39,11 @@ export default function LocationDetails() {
 
       <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm md:grid md:grid-cols-2">
 
-        <img
-          className="h-72 w-full object-cover md:h-full"
-          src={`http://127.0.0.1:8000/static/images/${location.image}`}
-          alt={location.name}
-        />
+       <img
+  className="h-72 w-full object-cover md:h-full"
+  src={getImageUrl(location.image)}
+  alt={location.name}
+      />
 
         <div className="p-7">
           <p className="text-sm font-bold uppercase tracking-wide text-blue-600">

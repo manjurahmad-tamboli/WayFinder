@@ -1,4 +1,5 @@
 import { Link } from 'react-router-dom'
+import { getImageUrl } from '../services/api'
 
 export default function LocationCard({ location }) {
   return (
@@ -6,7 +7,7 @@ export default function LocationCard({ location }) {
 
       <img
         className="h-36 w-full object-cover"
-        src={`http://127.0.0.1:8000/static/images/${location.image}`}
+        src={getImageUrl(location.image)}
         alt={location.name}
       />
 
