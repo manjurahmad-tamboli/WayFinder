@@ -1,0 +1,1 @@
+export default function Footer() { return <footer className="border-t border-white/[.07] py-8"><div className="portfolio-shell flex flex-col justify-between gap-3 text-sm text-slate-500 sm:flex-row"><p>© {new Date().getFullYear()} Manjurahmad Tamboli.</p><p>Designed and built with React.</p></div></footer> }
