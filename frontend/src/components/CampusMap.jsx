@@ -8,6 +8,25 @@ import {
   useMap,
 } from "react-leaflet";
 import { Link } from "react-router-dom";
+import L from "leaflet";
+import "leaflet/dist/leaflet.css";
+
+import markerIcon from "leaflet/dist/images/marker-icon.png";
+import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
+import markerShadow from "leaflet/dist/images/marker-shadow.png";
+
+// Fix Leaflet marker icons for Vite/React production builds
+const defaultMarkerIcon = L.icon({
+  iconUrl: markerIcon,
+  iconRetinaUrl: markerIcon2x,
+  shadowUrl: markerShadow,
+  iconSize: [25, 41],
+  iconAnchor: [12, 41],
+  popupAnchor: [1, -34],
+  shadowSize: [41, 41],
+});
+
+L.Marker.prototype.options.icon = defaultMarkerIcon;
 
 function FitMap({ locations, route }) {
   const map = useMap();
@@ -40,7 +59,8 @@ export default function CampusMap({
       <MapContainer
         center={[16.8454, 74.6017]}
         zoom={18}
-        scrollWheelZoom
+        scrollWheelZoom={true}
+        style={{ height: "100%", width: "100%" }}
       >
         {/* OpenStreetMap Tiles */}
         <TileLayer
@@ -59,9 +79,10 @@ export default function CampusMap({
           <Marker
             key={location.id}
             position={[
-              location.latitude,
-              location.longitude,
+              Number(location.latitude),
+              Number(location.longitude),
             ]}
+            icon={defaultMarkerIcon}
           >
             <Popup>
               <strong>{location.name}</strong>
