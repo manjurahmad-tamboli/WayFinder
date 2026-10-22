@@ -33,6 +33,8 @@ class Point(BaseModel):
 class RouteRequest(BaseModel):
     source: Point
     destination: Point
+    source_name: str | None = Field(default=None, max_length=120)
+    destination_name: str | None = Field(default=None, max_length=120)
 
 
 class RouteOut(BaseModel):
@@ -40,6 +42,7 @@ class RouteOut(BaseModel):
     distance_meters: int
     walking_minutes: int
     directions: list[str]
+    algorithm: str
 
 
 class ContactCreate(BaseModel):

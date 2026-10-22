@@ -116,6 +116,8 @@ export default function MapPage() {
           latitude: destination.latitude,
           longitude: destination.longitude,
         },
+        source_name: source.name,
+        destination_name: destination.name,
       });
 
       setRoute(data);
@@ -139,7 +141,7 @@ export default function MapPage() {
       <h1 className="text-3xl font-bold">Campus Map</h1>
 
       <p className="mt-1 text-slate-600">
-        Find a location or create a simple walking route.
+        Find a location and get the shortest walking route with turn-by-turn directions.
       </p>
 
       {error && (
@@ -168,9 +170,10 @@ export default function MapPage() {
           <select
             className="mt-1 w-full rounded-lg border p-2"
             value={sourceId}
-            onChange={(e) =>
-              setSourceId(e.target.value)
-            }
+            onChange={(e) => {
+              setSourceId(e.target.value);
+              setRoute(null);
+            }}
           >
             <option value="">
               Choose source
@@ -194,9 +197,10 @@ export default function MapPage() {
           <select
             className="mt-1 w-full rounded-lg border p-2"
             value={destinationId}
-            onChange={(e) =>
-              setDestinationId(e.target.value)
-            }
+            onChange={(e) => {
+              setDestinationId(e.target.value);
+              setRoute(null);
+            }}
           >
             <option value="">
               Choose destination
@@ -223,14 +227,20 @@ export default function MapPage() {
           {/* Route Details */}
           {route && (
             <div className="mt-5 border-t pt-4">
+              <p className="text-xs font-semibold uppercase tracking-wide text-blue-700">
+                Shortest path · {route.algorithm}
+              </p>
               <p className="font-semibold">
                 {route.distance_meters} m · ~
                 {route.walking_minutes} min walk
               </p>
 
+              <h3 className="mt-4 text-sm font-semibold text-slate-800">
+                Walking directions
+              </h3>
               <ol className="mt-2 list-decimal space-y-2 pl-5 text-sm text-slate-600">
-                {route.directions.map((direction) => (
-                  <li key={direction}>
+                {route.directions.map((direction, index) => (
+                  <li key={`${index}-${direction}`}>
                     {direction}
                   </li>
                 ))}
