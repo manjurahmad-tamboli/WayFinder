@@ -5,6 +5,7 @@ backend/**/*.pyc
 backend/database.db
 
 # Node
+node_modules/
 frontend/node_modules/
 frontend/dist/
 portfolio/node_modules/
