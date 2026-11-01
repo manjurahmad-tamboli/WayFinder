@@ -48,6 +48,13 @@ export default function useCategoryFilter(locations = []) {
     setAllCategoriesSelected(true);
   }
 
+  function selectOnlyCategory(category) {
+    const key = normalizeCategoryKey(category);
+    if (!categoryKeys.has(key)) return;
+    setSelectedCategories(new Set([key]));
+    setAllCategoriesSelected(false);
+  }
+
   function clearAllCategories() {
     setSelectedCategories(new Set());
     setAllCategoriesSelected(false);
@@ -64,6 +71,7 @@ export default function useCategoryFilter(locations = []) {
     filteredLocations,
     toggleCategory,
     selectAllCategories,
+    selectOnlyCategory,
     clearAllCategories,
   };
 }

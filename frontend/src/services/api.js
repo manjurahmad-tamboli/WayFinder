@@ -43,6 +43,24 @@ export const getLocation = (id) =>
 export const getCategories = () =>
   api.get('/categories')
 
+export const getLocationAutocomplete = (query, { signal, limit = 8 } = {}) =>
+  api.get('/locations/autocomplete', {
+    params: { q: query, limit },
+    signal,
+  })
+
+export const getCampusSearch = (query, { category, signal, limit = 12 } = {}) =>
+  api.get('/locations/search', {
+    params: { q: query, category, limit },
+    signal,
+  })
+
+export const getNearbyLocations = ({ latitude, longitude, query, category, signal, limit = 10 }) =>
+  api.get('/locations/nearby', {
+    params: { latitude, longitude, q: query || undefined, category: category || undefined, limit },
+    signal,
+  })
+
 export const searchLocations = (data) =>
   api.post('/search', data)
 
@@ -51,3 +69,9 @@ export const createRoute = (data) =>
 
 export const sendContact = (data) =>
   api.post('/contact', data)
+
+export const sendAssistantMessage = (data) =>
+  api.post('/api/ai/chat', data)
+
+export const getAssistantHealth = () =>
+  api.get('/api/ai/health')

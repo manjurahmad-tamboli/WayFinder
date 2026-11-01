@@ -1,16 +1,19 @@
-import { useEffect, useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import { useNavigate, useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import CampusMap from "../components/CampusMap";
 import Loader from "../components/Loader";
-import LocationCard from "../components/LocationCard";
+import SearchResultCard from "../components/SearchResultCard";
 import Reveal from "../components/Reveal";
+import SearchBar from "../components/SearchBar";
 import useLocations from "../hooks/useLocations";
-import { createRoute, getCategories, searchLocations } from "../services/api";
+import { createRoute, getCampusSearch, getCategories } from "../services/api";
+import { useMapActions } from "../contexts/MapActionContext";
 
 export default function MapPage() {
-  const [params] = useSearchParams();
+  const [params, setParams] = useSearchParams();
+  const { mapAction, dispatchMapAction } = useMapActions();
   const goTo = useNavigate();
   const category = params.get("category") || "";
   const queryParam = params.get("q") || "";
@@ -18,37 +21,114 @@ export default function MapPage() {
   const { locations: initial, loading, error } = useLocations(category || undefined);
   const [locations, setLocations] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [searching, setSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
+  const [searchRetry, setSearchRetry] = useState(0);
   const [query, setQuery] = useState(queryParam);
-  const [sourceId, setSourceId] = useState("");
-  const [destinationId, setDestinationId] = useState("");
-  const [selectedLocationId, setSelectedLocationId] = useState(null);
+  const [sourceId, setSourceId] = useState(params.get("from") || "");
+  const [destinationId, setDestinationId] = useState(destinationParam);
+  const [selectedLocationId, setSelectedLocationId] = useState(
+    Number(params.get("focus") || destinationParam) || null,
+  );
   const [sourceMode, setSourceMode] = useState("manual");
   const [currentPosition, setCurrentPosition] = useState(null);
   const [locationMessage, setLocationMessage] = useState("");
   const [locating, setLocating] = useState(false);
   const [route, setRoute] = useState(null);
+  const [routeSource, setRouteSource] = useState(null);
   const [routing, setRouting] = useState(false);
+  const lastAppliedRouteAction = useRef(null);
 
-  useEffect(() => setLocations(initial), [initial]);
+  useEffect(() => {
+    if (!queryParam) setLocations(initial);
+  }, [initial, queryParam]);
   useEffect(() => {
     getCategories().then(({ data }) => setCategories(data)).catch(() => {});
   }, []);
   useEffect(() => {
+    setQuery(queryParam);
+  }, [queryParam]);
+  useEffect(() => {
+    if (!queryParam) {
+      setSearching(false);
+      setSearchError("");
+      return undefined;
+    }
+    const controller = new AbortController();
+    setSearching(true);
+    setSearchError("");
+    getCampusSearch(queryParam, { category: category || undefined, limit: 50, signal: controller.signal })
+      .then(({ data }) => {
+        if (controller.signal.aborted) return;
+        setLocations(data.locations || []);
+        toast.success(data.locations?.length
+          ? `${data.locations.length} matching location${data.locations.length === 1 ? "" : "s"}`
+          : "No matching campus locations");
+      })
+      .catch((requestError) => {
+        if (!controller.signal.aborted && requestError.code !== "ERR_CANCELED") {
+          setSearchError("Search could not be completed. Check your connection and retry.");
+          setLocations([]);
+          toast.error("Search could not be completed");
+        }
+      })
+      .finally(() => {
+        if (!controller.signal.aborted) setSearching(false);
+      });
+    return () => controller.abort();
+  }, [category, queryParam, searchRetry]);
+  useEffect(() => {
     if (destinationParam) setDestinationId(destinationParam);
   }, [destinationParam]);
 
-  async function runSearch(value = query) {
-    if (!value.trim()) {
-      setLocations(initial);
-      return;
+  useEffect(() => {
+    if (mapAction?.type !== "show_route" || !mapAction.route || lastAppliedRouteAction.current === mapAction.eventId) return;
+    lastAppliedRouteAction.current = mapAction.eventId;
+    setRoute(mapAction.route);
+    setRouteSource("assistant");
+    setDestinationId(String(mapAction.destination_id || ""));
+    setSelectedLocationId(Number(mapAction.destination_id) || null);
+    if (mapAction.source_is_current) {
+      const firstPoint = mapAction.route.route?.[0];
+      setSourceMode("current");
+      setSourceId("");
+      setCurrentPosition(firstPoint ? { latitude: firstPoint[0], longitude: firstPoint[1] } : null);
+      setLocationMessage("Route start shared with WayFinder AI.");
+    } else if (mapAction.source_id) {
+      setSourceMode("manual");
+      setSourceId(String(mapAction.source_id));
+      setCurrentPosition(null);
     }
-    try {
-      const { data } = await searchLocations({ query: value, category: category || null });
-      setLocations(data);
-      toast.success(data.length ? `${data.length} location${data.length === 1 ? "" : "s"} found` : "No matching locations");
-    } catch {
-      toast.error("Search could not be completed");
+  }, [mapAction]);
+
+  useEffect(() => {
+    if (mapAction?.type !== "clear_selection" || lastAppliedRouteAction.current === mapAction.eventId) return;
+    lastAppliedRouteAction.current = mapAction.eventId;
+    if (routeSource === "assistant") {
+      setRoute(null);
+      setRouteSource(null);
     }
+  }, [mapAction, routeSource]);
+
+  function submitSearch(value) {
+    const nextParams = new URLSearchParams();
+    if (value.trim()) nextParams.set("q", value.trim());
+    if (category) nextParams.set("category", category);
+    if (value.trim() === queryParam) setSearchRetry((count) => count + 1);
+    setParams(nextParams);
+  }
+
+  function showSearchResult(location) {
+    dispatchMapAction({ type: "show_location", location_id: location.id });
+    setSelectedLocationId(location.id);
+    goTo(`/map?focus=${location.id}`);
+  }
+
+  function planSearchResult(location) {
+    dispatchMapAction({ type: "show_location", location_id: location.id });
+    setSelectedLocationId(location.id);
+    setDestinationId(String(location.id));
+    goTo(`/map?destination=${location.id}`);
   }
 
   const all = useMemo(() => initial.length ? initial : locations, [initial, locations]);
@@ -75,6 +155,7 @@ export default function MapPage() {
         setSourceMode("current");
         setLocationMessage("Using your current position as the route start.");
         setRoute(null);
+        setRouteSource(null);
         setLocating(false);
         toast.success("Current location set as your start");
       },
@@ -112,6 +193,7 @@ export default function MapPage() {
         destination_name: destination.name,
       });
       setRoute(data);
+      setRouteSource("manual");
       setSelectedLocationId(destination.id);
       toast.success("Shortest route generated");
     } catch (requestError) {
@@ -140,6 +222,7 @@ export default function MapPage() {
         <CampusMap
           locations={locations}
           route={route?.route}
+          mapAction={mapAction}
           userPosition={sourceMode === "current" ? currentPosition : null}
           selectedLocationId={selectedLocationId}
           onSelectLocation={setSelectedLocationId}
@@ -203,10 +286,7 @@ export default function MapPage() {
       </Reveal>
 
       <Reveal className="discovery-toolbar panel" delay={60}>
-        <form className="discovery-search" onSubmit={(event) => { event.preventDefault(); runSearch(); }}>
-          <input className="form-input" value={query} onChange={(event) => setQuery(event.target.value)} placeholder="Search campus locations" aria-label="Search locations" />
-          <button className="primary-button px-5 py-3" type="submit">Search</button>
-        </form>
+        <SearchBar value={query} onChange={setQuery} onSearch={submitSearch} initialQuery={queryParam} compact />
         <select className="route-select category-filter" value={category} aria-label="Filter by category" onChange={(event) => goTo(event.target.value ? `/map?category=${encodeURIComponent(event.target.value)}` : "/map")}>
           <option value="">All categories</option>
           {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
@@ -219,7 +299,28 @@ export default function MapPage() {
           <h2 className="section-title">{category || "All locations"}</h2>
         </div>
       </Reveal>
-      {locations.length ? <Reveal className="location-grid" delay={120}>{locations.map((item) => <LocationCard key={item.id} location={item} />)}</Reveal> : <p className="panel panel-pad text-muted">No locations match this search.</p>}
+      {searchError && queryParam ? (
+        <div className="panel panel-pad search-results-error" role="alert">
+          <p>{searchError}</p>
+          <button type="button" className="nearby-retry" onClick={() => setSearchRetry((count) => count + 1)}>Try search again</button>
+        </div>
+      ) : searching && queryParam ? (
+        <div className="search-directory-grid search-directory-skeletons" role="status" aria-label="Loading search results">
+          {[0, 1, 2].map((index) => <div className="search-result-skeleton" key={index}><span /><div><i /><i /><i /></div></div>)}
+        </div>
+      ) : locations.length ? (
+        <Reveal className="search-directory-grid" delay={120}>
+          {locations.map((item) => (
+            <SearchResultCard
+              key={item.id}
+              location={item}
+              onViewMap={showSearchResult}
+              onNavigate={planSearchResult}
+              className="search-directory-card"
+            />
+          ))}
+        </Reveal>
+      ) : <p className="panel panel-pad text-muted">No locations match this search.</p>}
     </section>
   );
 }

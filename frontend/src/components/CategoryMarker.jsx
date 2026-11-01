@@ -1,4 +1,4 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Link } from "react-router-dom";
 import { Marker, Popup, Tooltip } from "react-leaflet";
@@ -7,7 +7,8 @@ import L from "leaflet";
 import CategoryIcon from "./CategoryIcon";
 import { getCategoryStyle } from "./categoryConfig";
 
-export default function CategoryMarker({ location, selected = false, onSelect }) {
+export default function CategoryMarker({ location, selected = false, openPopup = false, onSelect }) {
+  const markerRef = useRef(null);
   const icon = useMemo(() => {
     const { color } = getCategoryStyle(location.category);
     const iconMarkup = renderToStaticMarkup(
@@ -23,8 +24,13 @@ export default function CategoryMarker({ location, selected = false, onSelect })
     });
   }, [location.category, selected]);
 
+  useEffect(() => {
+    if (openPopup) markerRef.current?.openPopup();
+  }, [openPopup]);
+
   return (
     <Marker
+      ref={markerRef}
       position={[Number(location.latitude), Number(location.longitude)]}
       icon={icon}
       zIndexOffset={selected ? 700 : 0}

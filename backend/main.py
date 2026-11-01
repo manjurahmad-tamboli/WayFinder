@@ -4,7 +4,7 @@ from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from database.database import Base, engine
-from routers import contact, locations, routes
+from routers import ai, contact, locations, routes
 from seed import seed_database
 
 
@@ -22,6 +22,11 @@ app = FastAPI(
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+
+@app.get("/health", tags=["Health"])
+def health_check() -> dict[str, str]:
+    return {"status": "ok"}
 
 allowed_origins = [
     "http://localhost:5173",
@@ -42,3 +47,4 @@ app.add_middleware(
 app.include_router(locations.router)
 app.include_router(routes.router)
 app.include_router(contact.router)
+app.include_router(ai.router)
