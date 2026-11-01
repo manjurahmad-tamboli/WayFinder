@@ -1,32 +1,27 @@
-import { useEffect } from "react";
+import { useEffect, useState } from "react";
 import {
   MapContainer,
   Marker,
-  Popup,
   Polyline,
+  Popup,
   TileLayer,
   useMap,
 } from "react-leaflet";
-import { Link } from "react-router-dom";
 import L from "leaflet";
 import "leaflet/dist/leaflet.css";
 
-import markerIcon from "leaflet/dist/images/marker-icon.png";
-import markerIcon2x from "leaflet/dist/images/marker-icon-2x.png";
-import markerShadow from "leaflet/dist/images/marker-shadow.png";
+import CategoryLegend from "./CategoryLegend";
+import CategoryMarker from "./CategoryMarker";
+import useCategoryFilter from "../hooks/useCategoryFilter";
 
-// Fix Leaflet marker icons for Vite/React production builds
-const defaultMarkerIcon = L.icon({
-  iconUrl: markerIcon,
-  iconRetinaUrl: markerIcon2x,
-  shadowUrl: markerShadow,
-  iconSize: [25, 41],
-  iconAnchor: [12, 41],
-  popupAnchor: [1, -34],
-  shadowSize: [41, 41],
+const EMPTY_LIST = [];
+
+const currentLocationIcon = L.divIcon({
+  className: "wayfinder-current-location-wrap",
+  html: '<span class="wayfinder-current-location"><span></span></span>',
+  iconSize: [30, 30],
+  iconAnchor: [15, 15],
 });
-
-L.Marker.prototype.options.icon = defaultMarkerIcon;
 
 function FitMap({ locations, route }) {
   const map = useMap();
@@ -51,69 +46,93 @@ function FitMap({ locations, route }) {
 }
 
 export default function CampusMap({
-  locations = [],
-  route = [],
+  locations = EMPTY_LIST,
+  route = EMPTY_LIST,
+  userPosition = null,
+  selectedLocationId,
+  onSelectLocation,
 }) {
+  const [localSelectedId, setLocalSelectedId] = useState(null);
+  const activeSelectedId = selectedLocationId !== undefined
+    ? selectedLocationId
+    : localSelectedId;
+  const {
+    selectedCategories,
+    filteredLocations,
+    toggleCategory,
+    selectAllCategories,
+    clearAllCategories,
+  } = useCategoryFilter(locations);
+
+  function selectLocation(locationId) {
+    setLocalSelectedId(locationId);
+    onSelectLocation?.(locationId);
+  }
+
+  useEffect(() => {
+    if (activeSelectedId == null) return;
+    const selectionIsVisible = filteredLocations.some(
+      (location) => Number(location.id) === Number(activeSelectedId),
+    );
+    if (!selectionIsVisible) {
+      setLocalSelectedId(null);
+      onSelectLocation?.(null);
+    }
+  }, [activeSelectedId, filteredLocations, onSelectLocation]);
+
   return (
-    <div className="map-card overflow-hidden rounded-2xl border border-slate-200 bg-slate-100 shadow-sm">
+    <div className="map-card">
       <MapContainer
         center={[16.8454, 74.6017]}
         zoom={18}
         scrollWheelZoom={true}
         style={{ height: "100%", width: "100%" }}
       >
-        {/* OpenStreetMap Tiles */}
         <TileLayer
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png"
         />
 
-        {/* Auto Fit Map */}
-        <FitMap
-          locations={locations}
-          route={route}
-        />
+        <FitMap locations={locations} route={route} />
 
-        {/* Location Markers */}
-        {locations.map((location) => (
-          <Marker
+        {filteredLocations.map((location) => (
+          <CategoryMarker
             key={location.id}
-            position={[
-              Number(location.latitude),
-              Number(location.longitude),
-            ]}
-            icon={defaultMarkerIcon}
-          >
-            <Popup>
-              <strong>{location.name}</strong>
-
-              <br />
-
-              <span>{location.category}</span>
-
-              <br />
-
-              <Link
-                to={`/locations/${location.id}`}
-                className="text-blue-700"
-              >
-                View details
-              </Link>
-            </Popup>
-          </Marker>
+            location={location}
+            selected={Number(activeSelectedId) === Number(location.id)}
+            onSelect={selectLocation}
+          />
         ))}
 
-        {/* Route Line */}
+        {userPosition && (
+          <Marker
+            position={[userPosition.latitude, userPosition.longitude]}
+            icon={currentLocationIcon}
+            zIndexOffset={1000}
+          >
+            <Popup>Your current location</Popup>
+          </Marker>
+        )}
+
         {route.length > 0 && (
           <Polyline
             positions={route}
             pathOptions={{
-              color: "#2563eb",
-              weight: 5,
+              className: "wayfinder-route-line",
+              color: "#d92342",
+              weight: 6,
+              opacity: 0.95,
             }}
           />
         )}
       </MapContainer>
+      <CategoryLegend
+        locations={locations}
+        selectedCategories={selectedCategories}
+        onToggleCategory={toggleCategory}
+        onSelectAll={selectAllCategories}
+        onClearAll={clearAllCategories}
+      />
     </div>
   );
 }

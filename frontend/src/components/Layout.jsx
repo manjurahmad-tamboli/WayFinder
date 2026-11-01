@@ -1,58 +1,30 @@
 import { NavLink } from "react-router-dom";
-import logo from "../assets/logo.png";
 
-const navClass = ({ isActive }) =>
-  `text-sm font-medium transition ${
-    isActive
-      ? "text-blue-700"
-      : "text-slate-600 hover:text-blue-700"
-  }`;
+const navClass = ({ isActive }) => `nav-link${isActive ? " active" : ""}`;
+
+function PinMark() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M19 10.2c0 5.1-7 11.2-7 11.2S5 15.3 5 10.2a7 7 0 1 1 14 0Z" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
 
 export function Navbar() {
   return (
-    <header className="sticky top-0 z-20 border-b border-slate-200 bg-white/95 backdrop-blur">
-      <nav className="mx-auto flex max-w-6xl items-center justify-between px-4 py-3">
-        {/* Logo */}
-        <NavLink
-          to="/"
-          className="flex items-center gap-2 font-bold text-slate-900"
-        >
-          <span className="grid h-9 w-9 place-items-center rounded-xl bg-blue-600 text-lg text-white">
-            W
-          </span>
-
+    <header className="site-navbar">
+      <nav className="nav-inner" aria-label="Main navigation">
+        <NavLink to="/" className="brand" aria-label="WayFinder home">
+          <span className="brand-mark"><PinMark /></span>
           <span>WayFinder</span>
         </NavLink>
 
-        {/* Navigation Links */}
-        <div className="flex gap-4 sm:gap-6">
-          <NavLink
-            to="/"
-            className={navClass}
-          >
-            Home
-          </NavLink>
-
-          <NavLink
-            to="/map"
-            className={navClass}
-          >
-            Map
-          </NavLink>
-
-          <NavLink
-            to="/about"
-            className={navClass}
-          >
-            About
-          </NavLink>
-
-          <NavLink
-            to="/contact"
-            className={navClass}
-          >
-            Contact
-          </NavLink>
+        <div className="nav-links">
+          <NavLink to="/" end className={navClass}>Home</NavLink>
+          <NavLink to="/map" className={navClass}>Map</NavLink>
+          <NavLink to="/about" className={navClass}>About</NavLink>
+          <NavLink to="/contact" className={navClass}>Contact</NavLink>
         </div>
       </nav>
     </header>
@@ -61,8 +33,12 @@ export function Navbar() {
 
 export function Footer() {
   return (
-    <footer className="mt-12 bg-slate-900 py-7 text-center text-sm text-slate-300">
-      WayFinder Â· Built for a better campus experience
+    <footer className="site-footer">
+      <div className="footer-inner">
+        <span className="footer-brand">WayFinder</span>
+        <span>Built for a better campus experience</span>
+        <span>Explore confidently. Arrive easily.</span>
+      </div>
     </footer>
   );
 }

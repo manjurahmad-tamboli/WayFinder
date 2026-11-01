@@ -1,7 +1,13 @@
-import { Link } from 'react-router-dom'
-export default function NotFound() 
-{ return <section className="mx-auto max-w-xl px-4 py-24 text-center"><p className="text-7xl">🧭</p>
-<h1 className="mt-5 text-4xl font-bold">404 — Lost on campus?</h1>
-<p className="mt-3 text-slate-600">The page you were looking for does not exist.</p>
-<Link to="/" className="mt-6 inline-block rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white">Take me home</Link></section>
- }
+import { Link } from "react-router-dom";
+
+export default function NotFound() {
+  return (
+    <section className="error-state">
+      <span className="error-compass" aria-hidden="true">⌖</span>
+      <p className="eyebrow">404 · Wrong turn</p>
+      <h1>Lost on this page?</h1>
+      <p>The page you were looking for isn’t here. Let’s get you back on track.</p>
+      <Link to="/" className="primary-button px-5 py-3">Take me home</Link>
+    </section>
+  );
+}

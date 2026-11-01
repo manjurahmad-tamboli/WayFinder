@@ -43,6 +43,7 @@ class RouteOut(BaseModel):
     walking_minutes: int
     directions: list[str]
     algorithm: str
+    network_note: str
 
 
 class ContactCreate(BaseModel):

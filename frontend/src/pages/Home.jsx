@@ -3,21 +3,50 @@ import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import CampusMap from "../components/CampusMap";
+import CategoryIcon from "../components/CategoryIcon";
 import Loader from "../components/Loader";
 import LocationCard from "../components/LocationCard";
+import Reveal from "../components/Reveal";
 import SearchBar from "../components/SearchBar";
-
 import useLocations from "../hooks/useLocations";
 import { getCategories } from "../services/api";
+import { getCategoryStyle } from "../components/categoryConfig";
 
-const icons = {
-  Academic: "🎓",
-  Hostel: "🏠",
-  Food: "🍽️",
-  Administration: "🏛️",
-  Sports: "⚽",
-  Facilities: "🧭",
-};
+function RoutePreview() {
+  return (
+    <div className="hero-visual panel">
+      <div className="preview-topline">
+        <span className="live-dot" />
+        <span>Campus route finder</span>
+        <span className="preview-badge">WALKING</span>
+      </div>
+      <div className="preview-map" aria-label="Decorative campus path illustration">
+        <span className="map-label map-label-one">CAMPUS PATH</span>
+        <span className="map-label map-label-two">BUILDINGS</span>
+        <svg viewBox="0 0 520 270" role="img" aria-hidden="true">
+          <path className="map-grid-line" d="M0 55h520M0 135h520M0 215h520M80 0v270M200 0v270M320 0v270M440 0v270" />
+          <path className="campus-route-shadow" d="M52 211 145 211 145 166 224 166 224 116 321 116 321 70 426 70" />
+          <path className="campus-route-line" d="M52 211 145 211 145 166 224 166 224 116 321 116 321 70 426 70" />
+          <circle className="route-point-start" cx="52" cy="211" r="9" />
+          <circle className="route-point-end" cx="426" cy="70" r="9" />
+          <circle className="route-waypoint" cx="145" cy="166" r="5" />
+          <circle className="route-waypoint" cx="224" cy="116" r="5" />
+          <circle className="route-waypoint" cx="321" cy="70" r="5" />
+          <rect className="map-building" x="84" y="54" width="71" height="51" rx="8" />
+          <rect className="map-building" x="263" y="184" width="88" height="46" rx="8" />
+          <rect className="map-building" x="370" y="136" width="73" height="43" rx="8" />
+        </svg>
+        <span className="preview-point-label start-label">START</span>
+        <span className="preview-point-label end-label">DESTINATION</span>
+      </div>
+      <div className="preview-footer">
+        <div><span className="preview-number">01</span><span>Choose a place</span></div>
+        <div><span className="preview-number">02</span><span>Get a walking route</span></div>
+        <div><span className="preview-number">03</span><span>Arrive with confidence</span></div>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
   const { locations, loading, error } = useLocations();
@@ -25,117 +54,78 @@ export default function Home() {
 
   useEffect(() => {
     toast.success("Welcome to WayFinder!");
-
-    getCategories()
-      .then(({ data }) => {
-        setCategories(data);
-      })
-      .catch(() => {});
+    getCategories().then(({ data }) => setCategories(data)).catch(() => {});
   }, []);
 
   return (
     <>
-      {/* Hero Section */}
-      <section className="bg-gradient-to-br from-blue-700 to-blue-500 px-4 py-16 text-white">
-        <div className="mx-auto max-w-6xl text-center">
-          <p className="mb-3 font-semibold text-blue-100">
-            CAMPUS NAVIGATION GUIDE
-          </p>
-
-          <h1 className="text-4xl font-extrabold sm:text-5xl">
-            Find your way around campus.
-          </h1>
-
-          <p className="mx-auto mt-4 max-w-2xl text-blue-100">
-            Search buildings, explore the map, and get simple walking
-            directions in seconds.
-          </p>
-
-          <div className="mx-auto mt-7 max-w-2xl">
-            <SearchBar />
-          </div>
-        </div>
-      </section>
-
-      {/* Campus Map Section */}
-      <section className="mx-auto max-w-6xl px-4 py-12">
-        <div className="mb-5 flex items-end justify-between">
-          <div>
-            <h2 className="text-2xl font-bold">Explore the campus</h2>
-            <p className="text-slate-600">
-              Click a marker to discover a place.
+      <section className="home-hero">
+        <div className="hero-content hero-grid">
+          <div className="hero-copy-block">
+            <p className="hero-kicker">Campus navigation guide</p>
+            <h1 className="hero-title">Your campus, <span>within reach.</span></h1>
+            <p className="hero-copy">
+              Find the places that matter, explore the map, and follow a clear walking route to your destination.
             </p>
+            <div className="hero-search"><SearchBar /></div>
+            <div className="hero-meta">
+              <span className="meta-pill"><strong>{locations.length || "—"}</strong> campus places</span>
+              <span className="meta-pill"><strong>{categories.length || "—"}</strong> useful categories</span>
+              <span className="meta-pill">Shortest paths with Dijkstra</span>
+            </div>
           </div>
-
-          <Link
-            to="/map"
-            className="text-sm font-semibold text-blue-700"
-          >
-            Open full map →
-          </Link>
+          <RoutePreview />
         </div>
-
-        {loading ? (
-          <Loader />
-        ) : error ? (
-          <p className="rounded-xl bg-red-50 p-4 text-red-700">
-            {error}
-          </p>
-        ) : (
-          <CampusMap locations={locations} />
-        )}
       </section>
 
-      {/* Categories Section */}
-      <section className="bg-white px-4 py-12">
-        <div className="mx-auto max-w-6xl">
-          <h2 className="text-2xl font-bold">
-            Browse by category
-          </h2>
+      <Reveal as="section" className="page-section">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Get your bearings</p>
+            <h2 className="section-title">Explore the campus</h2>
+            <p className="section-copy">Select a marker to see details, then plan your route.</p>
+          </div>
+          <Link to="/map" className="inline-link">Open full map <span aria-hidden="true">↗</span></Link>
+        </div>
+        {loading ? <Loader /> : error ? <p className="panel panel-pad text-silver">{error}</p> : <CampusMap locations={locations} />}
+      </Reveal>
 
-          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {categories.map((category) => (
-              <Link
-                key={category.id}
-                to={`/map?category=${category.name}`}
-                className="rounded-2xl border border-slate-100 p-5 text-center shadow-sm transition hover:border-blue-200 hover:bg-blue-50"
+      <Reveal as="section" className="page-section section-categories" delay={60}>
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Browse with ease</p>
+            <h2 className="section-title">Find the right category</h2>
+          </div>
+        </div>
+        <div className="category-grid">
+          {categories.map((category) => (
+            <Link key={category.id} to={`/map?category=${encodeURIComponent(category.name)}`} className="category-card">
+              <span
+                className="category-icon"
+                style={{ "--category-color": getCategoryStyle(category.name).color }}
               >
-                <span className="text-2xl">
-                  {icons[category.name] || "📍"}
-                </span>
+                <CategoryIcon category={category.name} size={20} />
+              </span>
+              <span className="category-name">{category.name}</span>
+            </Link>
+          ))}
+        </div>
+      </Reveal>
 
-                <p className="mt-2 font-semibold">
-                  {category.name}
-                </p>
-              </Link>
-            ))}
+      <Reveal as="section" className="page-section" delay={100}>
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Worth knowing</p>
+            <h2 className="section-title">Popular locations</h2>
+            <p className="section-copy">Explore the places visitors look for most.</p>
           </div>
         </div>
-      </section>
-
-      {/* Popular Locations Section */}
-      <section className="mx-auto max-w-6xl px-4 py-12">
-        <h2 className="text-2xl font-bold">
-          Popular locations
-        </h2>
-
-        <p className="mt-1 text-slate-600">
-          The places visitors search for most often.
-        </p>
-
-        {loading ? (
-          <Loader />
-        ) : (
-          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {locations.slice(0, 4).map((location) => (
-              <LocationCard
-                key={location.id}
-                location={location}
-              />
-            ))}
+        {loading ? <Loader /> : (
+          <div className="location-grid">
+            {locations.slice(0, 4).map((location) => <LocationCard key={location.id} location={location} />)}
           </div>
         )}
-      </section>
+      </Reveal>
     </>
   );
 }

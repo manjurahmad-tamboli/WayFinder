@@ -1,12 +1,9 @@
-"""Campus pedestrian routing using Dijkstra's shortest-path algorithm.
-
-The sample walkway network is a hand-authored graph based on this project's
-campus seed coordinates. Replace or verify these path connections against a
-campus survey before relying on them for real-world navigation.
-"""
+"""Campus pedestrian routing over a typed, status-aware walkway graph."""
 
 import heapq
 import math
+from dataclasses import dataclass
+from typing import Literal
 
 from fastapi import APIRouter, HTTPException
 
@@ -15,7 +12,7 @@ from schemas.schemas import RouteOut, RouteRequest
 router = APIRouter(tags=["Navigation"])
 
 WALKING_METERS_PER_MINUTE = 80
-MAX_ACCESS_DISTANCE_METERS = 500
+MAX_ACCESS_DISTANCE_METERS = 150
 
 # Each graph node is a known campus landmark. Edges describe the sample
 # pedestrian connections between landmarks; Dijkstra chooses among these
@@ -66,6 +63,39 @@ WALKWAY_EDGES = (
 )
 
 
+@dataclass(frozen=True)
+class EdgePolicy:
+    """Access state for a walkway segment; unlisted segments default to public/open."""
+
+    status: Literal["open", "closed", "restricted"] = "open"
+    access: Literal["public", "staff", "residents"] = "public"
+    note: str | None = None
+
+
+# Junctions are graph branching points, not guesses about building doors.
+# The seed locations still act as provisional access anchors until surveyed.
+WALKWAY_NODE_ROLES = {
+    "main_gate": "entrance",
+    "parking": "junction",
+    "it_hut": "junction",
+    "gymkhana": "junction",
+    "exam_center": "junction",
+    "d1_block": "junction",
+}
+
+# Add a verified polyline here as (start_node, end_node): ((lat, lon), ...).
+# Until then each sample link uses its endpoint coordinates and is provisional.
+WALKWAY_EDGE_GEOMETRY: dict[tuple[str, str], tuple[tuple[float, float], ...]] = {}
+
+# Only put closures/restrictions here after confirming them with campus staff.
+# The router automatically omits closed, non-public, or restricted edges.
+WALKWAY_EDGE_POLICIES: dict[tuple[str, str], EdgePolicy] = {}
+PUBLIC_ROUTE_NOTE = (
+    "The sample walkway links and building access anchors are provisional, not yet "
+    "field-surveyed. Confirmed closed or restricted links are excluded from routes."
+)
+
+
 def haversine_meters(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
     """Return the great-circle distance between two latitude/longitude points."""
     radius = 6_371_000
@@ -84,19 +114,255 @@ def _node_coordinates(node_id: str) -> tuple[float, float]:
     return latitude, longitude
 
 
+def _edge_policy(start: str, end: str) -> EdgePolicy:
+    return WALKWAY_EDGE_POLICIES.get((start, end)) or WALKWAY_EDGE_POLICIES.get(
+        (end, start), EdgePolicy()
+    )
+
+
+def _edge_coordinates(start: str, end: str) -> list[tuple[float, float]]:
+    """Return an edge's ordered path geometry, falling back to seed endpoints."""
+    intermediate = WALKWAY_EDGE_GEOMETRY.get((start, end))
+    if intermediate is None:
+        intermediate = tuple(reversed(WALKWAY_EDGE_GEOMETRY.get((end, start), ())))
+    return [_node_coordinates(start), *intermediate, _node_coordinates(end)]
+
+
+def _polyline_distance(points: list[tuple[float, float]]) -> float:
+    return sum(haversine_meters(*a, *b) for a, b in zip(points, points[1:]))
+
+
+def _project_to_segment(
+    point: tuple[float, float],
+    start: tuple[float, float],
+    end: tuple[float, float],
+) -> tuple[tuple[float, float], float]:
+    """Project a GPS point onto a short campus segment using local metre coordinates."""
+    latitude, longitude = point
+    longitude_scale = 111_320 * math.cos(math.radians(latitude))
+    latitude_scale = 110_574
+    start_xy = ((start[1] - longitude) * longitude_scale, (start[0] - latitude) * latitude_scale)
+    end_xy = ((end[1] - longitude) * longitude_scale, (end[0] - latitude) * latitude_scale)
+    delta_x = end_xy[0] - start_xy[0]
+    delta_y = end_xy[1] - start_xy[1]
+    length_squared = delta_x * delta_x + delta_y * delta_y
+    fraction = 0.0 if length_squared == 0 else -(
+        start_xy[0] * delta_x + start_xy[1] * delta_y
+    ) / length_squared
+    fraction = min(1.0, max(0.0, fraction))
+    projected = (
+        start[0] + (end[0] - start[0]) * fraction,
+        start[1] + (end[1] - start[1]) * fraction,
+    )
+    return projected, haversine_meters(*point, *projected)
+
+
+def _point_at_distance(points: list[tuple[float, float]], target: float) -> tuple[float, float]:
+    walked = 0.0
+    for start, end in zip(points, points[1:]):
+        segment_length = haversine_meters(*start, *end)
+        if walked + segment_length >= target:
+            fraction = 0 if segment_length == 0 else (target - walked) / segment_length
+            return (
+                start[0] + (end[0] - start[0]) * fraction,
+                start[1] + (end[1] - start[1]) * fraction,
+            )
+        walked += segment_length
+    return points[-1]
+
+
+def _slice_polyline(
+    points: list[tuple[float, float]],
+    start_distance: float,
+    end_distance: float,
+) -> list[tuple[float, float]]:
+    """Return the part of a polyline between two distances from its first point."""
+    if start_distance > end_distance:
+        return list(reversed(_slice_polyline(points, end_distance, start_distance)))
+
+    result = [_point_at_distance(points, start_distance)]
+    walked = 0.0
+    for point_a, point_b in zip(points, points[1:]):
+        walked += haversine_meters(*point_a, *point_b)
+        if start_distance < walked < end_distance:
+            result.append(point_b)
+    result.append(_point_at_distance(points, end_distance))
+    return result
+
+
+def _nearest_walkway_segment(point: tuple[float, float]) -> dict:
+    nearest = None
+    for start_node, end_node in WALKWAY_EDGES:
+        policy = _edge_policy(start_node, end_node)
+        if policy.status != "open" or policy.access != "public":
+            continue
+
+        points = _edge_coordinates(start_node, end_node)
+        distance_along = 0.0
+        for index, (segment_start, segment_end) in enumerate(zip(points, points[1:])):
+            projected, access_distance = _project_to_segment(point, segment_start, segment_end)
+            segment_length = haversine_meters(*segment_start, *segment_end)
+            candidate = {
+                "edge": (start_node, end_node),
+                "geometry": points,
+                "offset": distance_along + haversine_meters(*segment_start, *projected),
+                "point": projected,
+                "distance": access_distance,
+                "segment_index": index,
+            }
+            if nearest is None or candidate["distance"] < nearest["distance"]:
+                nearest = candidate
+            distance_along += segment_length
+
+    if nearest is None or nearest["distance"] > MAX_ACCESS_DISTANCE_METERS:
+        raise HTTPException(
+            status_code=422,
+            detail="The selected point is too far from a mapped public walking path.",
+        )
+    return nearest
+
+
+def _add_graph_arc(
+    graph: dict[str, list[tuple[str, float, list[tuple[float, float]]]]],
+    start: str,
+    end: str,
+    geometry: list[tuple[float, float]],
+) -> None:
+    distance = _polyline_distance(geometry)
+    graph.setdefault(start, []).append((end, distance, geometry))
+    graph.setdefault(end, []).append((start, distance, list(reversed(geometry))))
+
+
+def _build_routing_graph(source_snap: dict, destination_snap: dict):
+    """Split walkway edges at GPS access points so routes begin/end on-path."""
+    graph: dict[str, list[tuple[str, float, list[tuple[float, float]]]]] = {
+        node_id: [] for node_id in CAMPUS_NODES
+    }
+    snap_specs = (
+        ("__route_source_snap__", source_snap),
+        ("__route_destination_snap__", destination_snap),
+    )
+    snaps_by_edge: dict[frozenset[str], list[tuple[float, str, tuple[float, float]]]] = {}
+    for snap_id, snap in snap_specs:
+        start_node, end_node = snap["edge"]
+        edge_key = frozenset((start_node, end_node))
+        snaps_by_edge.setdefault(edge_key, []).append((snap["offset"], snap_id, snap["point"]))
+        graph[snap_id] = []
+
+    for start_node, end_node in WALKWAY_EDGES:
+        policy = _edge_policy(start_node, end_node)
+        if policy.status != "open" or policy.access != "public":
+            continue
+
+        geometry = _edge_coordinates(start_node, end_node)
+        edge_snaps = sorted(snaps_by_edge.get(frozenset((start_node, end_node)), []))
+        if not edge_snaps:
+            _add_graph_arc(graph, start_node, end_node, geometry)
+            continue
+
+        total_length = _polyline_distance(geometry)
+        split_points = [(0.0, start_node)]
+        split_points.extend((offset, snap_id) for offset, snap_id, _ in edge_snaps)
+        split_points.append((total_length, end_node))
+        for (from_distance, from_node), (to_distance, to_node) in zip(split_points, split_points[1:]):
+            segment = _slice_polyline(geometry, from_distance, to_distance)
+            _add_graph_arc(graph, from_node, to_node, segment)
+
+    for snap_id, snap in snap_specs:
+        source_id = "__route_source__" if snap_id == "__route_source_snap__" else "__route_destination__"
+        graph[source_id] = []
+        _add_graph_arc(graph, source_id, snap_id, [snap["requested_point"], snap["point"]])
+
+    return graph
+
+
+def _route_geometry_between(source: tuple[float, float], destination: tuple[float, float]):
+    if haversine_meters(*source, *destination) < 1:
+        raise HTTPException(status_code=422, detail="Start and destination are the same location.")
+
+    source_snap = _nearest_walkway_segment(source)
+    destination_snap = _nearest_walkway_segment(destination)
+    source_snap["requested_point"] = source
+    destination_snap["requested_point"] = destination
+    graph = _build_routing_graph(source_snap, destination_snap)
+
+    source_id = "__route_source__"
+    destination_id = "__route_destination__"
+    distances = {node_id: math.inf for node_id in graph}
+    previous: dict[str, tuple[str, list[tuple[float, float]]] | None] = {
+        node_id: None for node_id in graph
+    }
+    distances[source_id] = 0.0
+    queue = [(0.0, source_id)]
+
+    while queue:
+        current_distance, current = heapq.heappop(queue)
+        if current_distance != distances[current]:
+            continue
+        if current == destination_id:
+            break
+        for neighbor, edge_distance, geometry in graph[current]:
+            candidate = current_distance + edge_distance
+            if candidate < distances[neighbor]:
+                distances[neighbor] = candidate
+                previous[neighbor] = (current, geometry)
+                heapq.heappush(queue, (candidate, neighbor))
+
+    if math.isinf(distances[destination_id]):
+        raise HTTPException(status_code=422, detail="No public campus walking route connects these locations.")
+
+    geometry_parts = []
+    current = destination_id
+    while current != source_id:
+        parent = previous[current]
+        if parent is None:
+            raise HTTPException(status_code=422, detail="Unable to reconstruct the walking route.")
+        previous_node, geometry = parent
+        geometry_parts.append(geometry)
+        current = previous_node
+
+    route_points = []
+    for geometry in reversed(geometry_parts):
+        for point in geometry:
+            if not route_points or haversine_meters(*route_points[-1], *point) > 0.5:
+                route_points.append(point)
+    return route_points, distances[destination_id]
+
+
 def _build_graph() -> dict[str, list[tuple[str, float]]]:
     graph = {node_id: [] for node_id in CAMPUS_NODES}
     for start, end in WALKWAY_EDGES:
-        start_lat, start_lon = _node_coordinates(start)
-        end_lat, end_lon = _node_coordinates(end)
-        distance = haversine_meters(start_lat, start_lon, end_lat, end_lon)
+        policy = _edge_policy(start, end)
+        if policy.status != "open" or policy.access != "public":
+            continue
+        distance = _polyline_distance(_edge_coordinates(start, end))
         graph[start].append((end, distance))
         graph[end].append((start, distance))
     return graph
 
 
+def _validate_walkway_graph() -> None:
+    """Fail early on malformed map data instead of returning a misleading route."""
+    seen_edges = set()
+    for start, end in WALKWAY_EDGES:
+        if start not in CAMPUS_NODES or end not in CAMPUS_NODES:
+            raise ValueError(f"Walkway edge references an unknown node: {start} -> {end}")
+        key = frozenset((start, end))
+        if start == end or key in seen_edges:
+            raise ValueError(f"Walkway graph contains a self-loop or duplicate edge: {start} -> {end}")
+        seen_edges.add(key)
+        for latitude, longitude in _edge_coordinates(start, end):
+            if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+                raise ValueError(f"Invalid coordinate on walkway edge: {start} -> {end}")
+
+
+_validate_walkway_graph()
+
+
 def shortest_path(start: str, end: str) -> tuple[list[str], float]:
     """Return the minimum-distance landmark path and its graph cost."""
+    if start not in CAMPUS_NODES or end not in CAMPUS_NODES:
+        raise HTTPException(status_code=422, detail="The selected point is not a mapped campus location.")
     graph = _build_graph()
     distances = {node_id: math.inf for node_id in graph}
     previous: dict[str, str | None] = {node_id: None for node_id in graph}
@@ -129,22 +395,6 @@ def shortest_path(start: str, end: str) -> tuple[list[str], float]:
     return path, distances[end]
 
 
-def _nearest_node(latitude: float, longitude: float) -> tuple[str, float]:
-    distance, node_id = min(
-        (
-            haversine_meters(latitude, longitude, node_lat, node_lon),
-            node_id,
-        )
-        for node_id, (_, node_lat, node_lon) in CAMPUS_NODES.items()
-    )
-    if distance > MAX_ACCESS_DISTANCE_METERS:
-        raise HTTPException(
-            status_code=422,
-            detail="The selected point is too far from the mapped campus walking paths.",
-        )
-    return node_id, distance
-
-
 def _bearing_degrees(start: tuple[float, float], end: tuple[float, float]) -> float:
     lat1, lon1 = map(math.radians, start)
     lat2, lon2 = map(math.radians, end)
@@ -173,27 +423,51 @@ def _build_directions(
     source_name: str,
     destination_name: str,
 ) -> list[str]:
-    directions = []
     if len(route_points) < 2:
         return [f"You are already at {destination_name}."]
 
-    previous_bearing = None
-    for index, (start, end) in enumerate(zip(route_points, route_points[1:])):
-        distance = round(haversine_meters(*start, *end))
-        bearing = _bearing_degrees(start, end)
+    segments = [
+        (start, haversine_meters(*start, *end), _bearing_degrees(start, end))
+        for start, end in zip(route_points, route_points[1:])
+        if haversine_meters(*start, *end) > 0.5
+    ]
+    if not segments:
+        return [f"You are already at {destination_name}."]
 
-        if index == 0:
-            directions.append(
-                f"Start at {source_name}. Head {_compass_direction(bearing)} for {distance} m."
-            )
-        else:
-            action = _turn_instruction(previous_bearing, bearing)
-            if action == "Continue straight":
-                directions.append(f"{action} for {distance} m.")
-            else:
-                directions.append(f"{action} and continue for {distance} m.")
-        previous_bearing = bearing
+    turns = []
+    previous_bearing = segments[0][2]
+    for index in range(1, len(segments)):
+        next_bearing = segments[index][2]
+        turn = (next_bearing - previous_bearing + 540) % 360 - 180
+        if abs(turn) >= 25:
+            turns.append((index, _turn_instruction(previous_bearing, next_bearing), segments[index][0]))
+        previous_bearing = next_bearing
 
+    directions = []
+    first_end = turns[0][0] if turns else len(segments)
+    first_distance = round(sum(segment[1] for segment in segments[:first_end]))
+    directions.append(
+        f"Start at {source_name}. Head {_compass_direction(segments[0][2])} for {first_distance} m."
+    )
+
+    for turn_number, (segment_index, action, turn_point) in enumerate(turns):
+        next_turn_index = (
+            turns[turn_number + 1][0]
+            if turn_number + 1 < len(turns)
+            else len(segments)
+        )
+        distance = round(sum(segment[1] for segment in segments[segment_index:next_turn_index]))
+        junction = min(
+            (
+                (haversine_meters(*turn_point, *_node_coordinates(node_id)), node_id)
+                for node_id, role in WALKWAY_NODE_ROLES.items()
+                if role == "junction"
+            ),
+            default=(math.inf, ""),
+        )
+        junction_name = CAMPUS_NODES[junction[1]][0] if junction[0] <= 15 else None
+        prefix = f"At {junction_name}, " if junction_name else ""
+        directions.append(f"{prefix}{action.lower()} and continue for {distance} m.")
     directions.append(f"You have arrived at {destination_name}.")
     return directions
 
@@ -202,16 +476,7 @@ def _build_directions(
 def create_route(payload: RouteRequest):
     source = (payload.source.latitude, payload.source.longitude)
     destination = (payload.destination.latitude, payload.destination.longitude)
-    source_node, source_access_distance = _nearest_node(*source)
-    destination_node, destination_access_distance = _nearest_node(*destination)
-
-    if source_node == destination_node and haversine_meters(*source, *destination) < 1:
-        raise HTTPException(status_code=422, detail="Start and destination are the same location.")
-
-    node_path, _graph_distance = shortest_path(source_node, destination_node)
-    route_points = [source]
-    route_points.extend(_node_coordinates(node_id) for node_id in node_path)
-    route_points.append(destination)
+    route_points, _graph_distance = _route_geometry_between(source, destination)
 
     # Collapse duplicate points (common when a selected place is itself a graph node).
     compact_points = []
@@ -219,9 +484,7 @@ def create_route(payload: RouteRequest):
         if not compact_points or haversine_meters(*compact_points[-1], *point) > 0.5:
             compact_points.append(point)
 
-    distance_meters = round(
-        sum(haversine_meters(*start, *end) for start, end in zip(compact_points, compact_points[1:]))
-    )
+    distance_meters = round(_polyline_distance(compact_points))
     walking_minutes = max(1, math.ceil(distance_meters / WALKING_METERS_PER_MINUTE))
 
     source_name = payload.source_name or "your starting point"
@@ -234,4 +497,5 @@ def create_route(payload: RouteRequest):
         walking_minutes=walking_minutes,
         directions=directions,
         algorithm="Dijkstra",
+        network_note=PUBLIC_ROUTE_NOTE,
     )

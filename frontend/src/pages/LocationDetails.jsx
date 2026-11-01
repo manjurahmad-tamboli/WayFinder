@@ -1,92 +1,56 @@
-import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import CampusMap from '../components/CampusMap'
-import Loader from '../components/Loader'
-import { getLocation, getImageUrl } from '../services/api'
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import toast from "react-hot-toast";
+
+import CampusMap from "../components/CampusMap";
+import Loader from "../components/Loader";
+import Reveal from "../components/Reveal";
+import { getImageUrl, getLocation } from "../services/api";
 
 export default function LocationDetails() {
-  const { id } = useParams()
-
-  const [location, setLocation] = useState(null)
-  const [error, setError] = useState('')
+  const { id } = useParams();
+  const [location, setLocation] = useState(null);
+  const [error, setError] = useState("");
 
   useEffect(() => {
-    getLocation(id)
-      .then(({ data }) => setLocation(data))
-      .catch(() => setError('This location could not be found.'))
-  }, [id])
+    setLocation(null);
+    setError("");
+    getLocation(id).then(({ data }) => setLocation(data)).catch(() => setError("This location could not be found."));
+  }, [id]);
 
   if (error) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-16">
-        <h1 className="text-2xl font-bold">{error}</h1>
-        <Link className="text-blue-700" to="/map">
-          Back to map
-        </Link>
-      </div>
-    )
+      <section className="error-state">
+        <p className="eyebrow">Location unavailable</p>
+        <h1>{error}</h1>
+        <Link className="primary-button mt-4 px-5 py-3" to="/map">Back to map</Link>
+      </section>
+    );
   }
 
-  if (!location) return <Loader />
+  if (!location) return <div className="page-wrap"><Loader /></div>;
 
   return (
-    <section className="mx-auto max-w-5xl px-4 py-10">
-
-      <Link className="text-sm font-semibold text-blue-700" to="/map">
-        ← Back to map
-      </Link>
-
-      <div className="mt-4 overflow-hidden rounded-2xl bg-white shadow-sm md:grid md:grid-cols-2">
-
-       <img
-  className="h-72 w-full object-cover md:h-full"
-  src={getImageUrl(location.image)}
-  alt={location.name}
-      />
-
-        <div className="p-7">
-          <p className="text-sm font-bold uppercase tracking-wide text-blue-600">
-            {location.category}
-          </p>
-
-          <h1 className="mt-2 text-3xl font-bold">
-            {location.name}
-          </h1>
-
-          <p className="mt-4 text-slate-600">
-            {location.description}
-          </p>
-
-          <dl className="mt-6 space-y-3 text-sm">
-            <div>
-              <dt className="font-semibold">Opening hours</dt>
-              <dd>{location.opening_hours}</dd>
-            </div>
-
-            <div>
-              <dt className="font-semibold">Coordinates</dt>
-              <dd>
-                {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
-              </dd>
-            </div>
-          </dl>
-
+    <section className="page-wrap">
+      <Link className="inline-link" to="/map">← Back to campus map</Link>
+      <Reveal as="article" className="location-detail mt-5">
+        <img className="detail-image" src={getImageUrl(location.image)} alt={location.name} />
+        <div className="detail-body">
+          <p className="eyebrow">{location.category}</p>
+          <h1 className="page-title">{location.name}</h1>
+          <p className="page-lead">{location.description}</p>
+          <div className="detail-meta"><span className="detail-meta-icon">◷</span><span><strong>Opening hours</strong><br />{location.opening_hours}</span></div>
+          <div className="detail-meta"><span className="detail-meta-icon">⌖</span><span><strong>Coordinates</strong><br />{Number(location.latitude).toFixed(5)}, {Number(location.longitude).toFixed(5)}</span></div>
           <Link
             to={`/map?destination=${location.id}`}
-            onClick={() => toast.success('Choose a starting point to navigate')}
-            className="mt-6 inline-block rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white"
+            onClick={() => toast.success("Choose a starting point to navigate")}
+            className="primary-button mt-7 px-5 py-3"
           >
-            Navigate here
+            Navigate here <span aria-hidden="true">↗</span>
           </Link>
         </div>
-
-      </div>
-
-      <div className="mt-7">
-        <CampusMap locations={[location]} />
-      </div>
-
+      </Reveal>
+      <Reveal className="detail-map" delay={80}><CampusMap locations={[location]} /></Reveal>
     </section>
-  )
+  );
 }

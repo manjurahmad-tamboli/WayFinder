@@ -52,7 +52,7 @@ Open the printed Vite URL (normally `http://localhost:5173`). The frontend uses 
 | GET | `/locations/{id}` | Get one location |
 | GET | `/categories` | List categories |
 | POST | `/search` | Search: `{ "query": "Library", "category": null }` |
-| POST | `/route` | Dijkstra route between `{ source, destination }` coordinates, optionally with `source_name` and `destination_name`; returns route points, distance, estimated walking minutes, directions, and algorithm |
+| POST | `/route` | Dijkstra route between `{ source, destination }` coordinates, optionally with `source_name` and `destination_name`; returns route points, distance, estimated walking minutes, directions, algorithm, and a route-network note |
 | POST | `/contact` | Store a name, email, and message |
 
 ## Project structure
@@ -69,7 +69,9 @@ WayFinder/
 └── README.md
 ```
 
-The demo walkway graph is hand-authored from the sample campus location coordinates in `backend/routers/routes.py`. Walking time is estimated at 80 metres per minute. Before using the directions on a real campus, verify the walkway connections and coordinates with a campus survey; the prototype does not track the user's live position or validate route accessibility.
+The route graph in `backend/routers/routes.py` identifies the Main Gate entrance and the modeled branching junctions, validates graph references, supports surveyed polyline geometry, and skips any edge marked closed, restricted, or non-public. Unlisted edges default to open/public. No closure or restricted-path entries are currently configured because none could be confirmed from the available campus map information; do not add them without checking with campus staff. The current seed links and building access anchors are still provisional and are shown as such in each route response. Add measured path vertices to `WALKWAY_EDGE_GEOMETRY` and confirmed access rules to `WALKWAY_EDGE_POLICIES` after a campus walk-through. Walking time is estimated at 80 metres per minute.
+
+For the campus survey, compare the graph with the [official WCE virtual campus tour](https://walchandsangli.ac.in/campus-life/virtual-campus-tour/) and its [infrastructure page](https://walchandsangli.ac.in/campus-life/infrastructure/), then confirm gate/building entrance points and temporary closures with campus staff. OpenStreetMap can provide additional volunteered geographic context, but verify its paths on site before treating them as walkable or public.
 
 ## Deployment
 
