@@ -7,7 +7,7 @@ WayFinder is a friendly campus navigation web app built for a college hackathon.
 - Interactive Leaflet map with OpenStreetMap tiles, markers, popups, and route lines
 - Search and category filtering for ten sample campus locations
 - Location pages with image, opening hours, category, and coordinates
-- Walking distance, estimated time, and written route guidance
+- Dijkstra shortest-path routing over a campus pedestrian graph, with walking distance, estimated time, and turn-by-turn guidance
 - Toast notifications for search, navigation, feedback, and errors
 - Contact form persisted to SQLite
 - Responsive React interface, custom 404 page, and API health endpoint
@@ -52,7 +52,7 @@ Open the printed Vite URL (normally `http://localhost:5173`). The frontend uses 
 | GET | `/locations/{id}` | Get one location |
 | GET | `/categories` | List categories |
 | POST | `/search` | Search: `{ "query": "Library", "category": null }` |
-| POST | `/route` | Route between `{ source, destination }` coordinates |
+| POST | `/route` | Dijkstra shortest route between `{ source, destination, destination_name? }` coordinates |
 | POST | `/contact` | Store a name, email, and message |
 
 ## Project structure

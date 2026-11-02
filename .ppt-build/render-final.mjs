@@ -1,0 +1,12 @@
+import fs from 'node:fs/promises';
+import { FileBlob, PresentationFile } from '@oai/artifact-tool';
+const p = await PresentationFile.importPptx(await FileBlob.load('C:/Users/IDEAPAD GAMING/OneDrive/Documents/WayFinder/deliverables/WayFinder_Project_Presentation_Final_v3.pptx'));
+const out = 'C:/Users/IDEAPAD GAMING/OneDrive/Documents/WayFinder/.ppt-build/rendered';
+await fs.mkdir(out, { recursive: true });
+const montage = await p.render({ montage: { width: 1600, columns: 3, background: '#eeeeee' } });
+await fs.writeFile(`${out}/montage.png`, new Uint8Array(await montage.arrayBuffer()));
+const renders = await p.render({ slide: Array.from({ length: p.slides.items.length }, (_, i) => i), scale: 1 });
+for (let i = 0; i < renders.length; i++) await fs.writeFile(`${out}/slide-${i + 1}.png`, new Uint8Array(await renders[i].arrayBuffer()));
+const check = await p.inspect({ select: '$.slides[*]', include: ['index','title','elements.kind','elements.text','elements.position'] });
+await fs.writeFile(`${out}/content.ndjson`, check.ndjson);
+console.log(`slides=${p.slides.items.length}`);

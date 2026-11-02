@@ -1,6 +1,5 @@
 from sqlalchemy import select
 from database.database import SessionLocal
-from sqlalchemy import delete
 from models.models import Category, Location
 
 SEED_LOCATIONS = [
@@ -28,41 +27,25 @@ def seed_database():
     db = SessionLocal()
 
     try:
-        # Delete old data
-        db.execute(delete(Location))
-        db.execute(delete(Category))
-        db.commit()
+        # Seed only a new database. Startup should not rewrite campus data on
+        # every reload, and existing edits must survive application restarts.
+        if db.scalar(select(Location.id).limit(1)) is not None:
+            return
 
         categories = sorted(set(location[1] for location in SEED_LOCATIONS))
-
-        for category in categories:
-            db.add(Category(name=category))
-
-        db.commit()
-
-        # Insert all locations
-        for (
-            name,
-            category,
-            latitude,
-            longitude,
-            description,
-            image,
-            opening_hours,
-        ) in SEED_LOCATIONS:
-
-            db.add(
-                Location(
-                    name=name,
-                    category=category,
-                    latitude=latitude,
-                    longitude=longitude,
-                    description=description,
-                    image=image,
-                    opening_hours=opening_hours,
-                )
+        db.add_all([Category(name=category) for category in categories])
+        db.add_all([
+            Location(
+                name=name,
+                category=category,
+                latitude=latitude,
+                longitude=longitude,
+                description=description,
+                image=image,
+                opening_hours=opening_hours,
             )
-
+            for name, category, latitude, longitude, description, image, opening_hours in SEED_LOCATIONS
+        ])
         db.commit()
 
     finally:

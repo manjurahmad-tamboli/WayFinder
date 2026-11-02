@@ -29,14 +29,16 @@ export default function Hero() {
         <div className="mt-9 flex items-center gap-3" aria-label="Social links">{socials.map(([icon, label, href]) => <a key={icon} href={href} target={href.startsWith('http') ? '_blank' : undefined} rel="noreferrer" className="icon-button" aria-label={label}><Icon name={icon} /></a>)}<span className="ml-2 hidden text-xs text-slate-500 sm:inline">Miraj, Maharashtra</span></div>
       </Reveal>
       <Reveal className="reveal-delay-2">
-        <div className="relative mx-auto grid w-full max-w-[390px] place-items-center py-7">
+        <div className="relative mx-auto flex w-full max-w-[390px] flex-col items-center py-7">
           <div className="absolute h-72 w-72 rounded-full bg-teal-300/20 blur-3xl" />
           <div className="relative rounded-full bg-gradient-to-br from-teal-200 via-teal-300/60 to-blue-400 p-1.5 shadow-[0_0_60px_rgba(45,212,191,.22)]">
             <div className="rounded-full bg-[#080b14] p-1"><img src={profilePhoto} alt="Manjurahmad Tamboli" className="h-64 w-64 rounded-full object-cover object-[50%_32%] sm:h-80 sm:w-80" /></div>
           </div>
-          <div className="glass relative -mt-5 rounded-xl px-5 py-3 text-center"><p className="text-xs font-medium uppercase tracking-[.16em] text-teal-200">Software development · Data analytics</p><p className="mt-1.5 text-lg font-semibold text-white">Manjurahmad Tamboli</p></div>
-          <div className="glass absolute bottom-0 left-0 hidden rounded-xl px-4 py-3 sm:block"><p className="text-xs text-slate-500">Based in</p><p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-100"><Icon name="location" size={15} /> Maharashtra, India</p></div>
-          <div className="glass absolute right-0 top-4 hidden rounded-xl px-4 py-3 sm:block"><p className="text-2xl font-semibold text-teal-200">3rd</p><p className="mt-1 text-xs text-slate-400">IGNITE PVPIT 2026</p></div>
+          <div className="glass relative mt-4 rounded-xl px-5 py-3 text-center"><p className="text-xs font-medium uppercase tracking-[.16em] text-teal-200">Software development · Data analytics</p><p className="mt-1.5 text-lg font-semibold text-white">Manjurahmad Tamboli</p></div>
+          <div className="relative mt-4 flex flex-wrap justify-center gap-3">
+            <div className="glass rounded-xl px-4 py-3"><p className="text-xs text-slate-500">Based in</p><p className="mt-1 flex items-center gap-1.5 text-sm font-medium text-slate-100"><Icon name="location" size={15} /> Maharashtra, India</p></div>
+            <div className="glass rounded-xl px-4 py-3"><p className="text-2xl font-semibold text-teal-200">3rd</p><p className="mt-1 text-xs text-slate-400">IGNITE PVPIT 2026</p></div>
+          </div>
         </div>
       </Reveal>
     </div>

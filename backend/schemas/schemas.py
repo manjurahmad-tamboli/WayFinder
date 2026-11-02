@@ -33,6 +33,7 @@ class Point(BaseModel):
 class RouteRequest(BaseModel):
     source: Point
     destination: Point
+    destination_name: str | None = Field(default=None, max_length=120)
 
 
 class RouteOut(BaseModel):

@@ -1,4 +1,4 @@
-from fastapi import APIRouter, Depends, HTTPException, Query
+from fastapi import APIRouter, Depends, HTTPException, Query, Response
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from database.database import get_db
@@ -9,7 +9,8 @@ router = APIRouter(tags=["Campus locations"])
 
 
 @router.get("/locations", response_model=list[LocationOut])
-def get_locations(category: str | None = Query(default=None), db: Session = Depends(get_db)):
+def get_locations(response: Response, category: str | None = Query(default=None), db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "public, max-age=60"
     statement = select(Location).order_by(Location.name)
     if category:
         statement = statement.where(Location.category.ilike(category))
@@ -17,7 +18,8 @@ def get_locations(category: str | None = Query(default=None), db: Session = Depe
 
 
 @router.get("/locations/{location_id}", response_model=LocationOut)
-def get_location(location_id: int, db: Session = Depends(get_db)):
+def get_location(location_id: int, response: Response, db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "public, max-age=60"
     location = db.get(Location, location_id)
     if not location:
         raise HTTPException(status_code=404, detail="Location not found")
@@ -25,7 +27,8 @@ def get_location(location_id: int, db: Session = Depends(get_db)):
 
 
 @router.get("/categories", response_model=list[CategoryOut])
-def get_categories(db: Session = Depends(get_db)):
+def get_categories(response: Response, db: Session = Depends(get_db)):
+    response.headers["Cache-Control"] = "public, max-age=60"
     return db.scalars(select(Category).order_by(Category.name)).all()
 
 

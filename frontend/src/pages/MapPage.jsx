@@ -116,12 +116,15 @@ export default function MapPage() {
           latitude: destination.latitude,
           longitude: destination.longitude,
         },
+        destination_name: destination.name,
       });
 
       setRoute(data);
       toast.success("Route generated successfully");
-    } catch {
-      toast.error("Unable to generate route");
+    } catch (error) {
+      toast.error(
+        error.response?.data?.detail || "Unable to generate route"
+      );
     }
   }
 

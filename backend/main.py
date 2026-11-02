@@ -3,6 +3,7 @@ from contextlib import asynccontextmanager
 from fastapi.staticfiles import StaticFiles
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.middleware.gzip import GZipMiddleware
 from database.database import Base, engine
 from routers import contact, locations, routes
 from seed import seed_database
@@ -22,6 +23,10 @@ app = FastAPI(
 )
 
 app.mount("/static", StaticFiles(directory="static"), name="static")
+
+# Location responses are small, but compressing them helps on slower mobile
+# connections and campus Wi-Fi.
+app.add_middleware(GZipMiddleware, minimum_size=500)
 
 allowed_origins = [
     "http://localhost:5173",
