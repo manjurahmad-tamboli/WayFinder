@@ -2,14 +2,16 @@ import { MapPinned, Navigation } from "lucide-react";
 import { useState } from "react";
 import CategoryIcon from "./CategoryIcon";
 import { getCategoryStyle } from "./categoryConfig";
-import { formatDistance } from "./SearchSuggestion";
+import DistanceLabel from "./DistanceLabel";
 import { getImageUrl } from "../services/api";
 import FavoriteButton from "./FavoriteButton";
 import ShareLocationButton from "./ShareLocationButton";
+import { isValidCoordinates } from "../services/distanceUtils";
 
 export default function SearchResultCard({ location, distanceMeters, onViewMap, onNavigate, navigating = false, className = "" }) {
   const [imageFailed, setImageFailed] = useState(false);
   const style = getCategoryStyle(location.category);
+  const hasCoordinates = isValidCoordinates(location.latitude, location.longitude);
 
   return (
     <article className={`nearby-result-card ${className}`.trim()}>
@@ -31,18 +33,18 @@ export default function SearchResultCard({ location, distanceMeters, onViewMap, 
           <strong>{location.name}</strong>
           <span className="nearby-result-category" style={{ "--category-color": style.color }}>
             <CategoryIcon category={location.category} size={13} /> {location.category}
-            {distanceMeters != null && <span className="nearby-distance">{formatDistance(distanceMeters)}</span>}
           </span>
+          <DistanceLabel location={location} distanceMeters={distanceMeters} />
           {location.description && <span className="nearby-result-description">{location.description}</span>}
         </div>
       </div>
       <div className="nearby-result-actions">
         <FavoriteButton location={location} className="nearby-favorite-button" />
         <ShareLocationButton location={location} className="nearby-share-button" />
-        <button type="button" className="nearby-action secondary-button" onClick={() => onViewMap(location)}>
-          <MapPinned size={14} /> Map
+        <button type="button" className="nearby-action secondary-button" onClick={() => onViewMap(location)} disabled={!hasCoordinates}>
+          <MapPinned size={14} /> {hasCoordinates ? "Map" : "No map point"}
         </button>
-        <button type="button" className="nearby-action nearby-action-primary" onClick={() => onNavigate(location)} disabled={navigating}>
+        <button type="button" className="nearby-action nearby-action-primary" onClick={() => onNavigate(location)} disabled={navigating || !hasCoordinates}>
           <Navigation size={14} /> {navigating ? "Planning…" : "Navigate"}
         </button>
       </div>

@@ -8,6 +8,8 @@ import CategoryIcon from "./CategoryIcon";
 import { getCategoryStyle } from "./categoryConfig";
 import FavoriteButton from "./FavoriteButton";
 import ShareLocationButton from "./ShareLocationButton";
+import DistanceLabel from "./DistanceLabel";
+import { isValidCoordinates } from "../services/distanceUtils";
 
 export default function CategoryMarker({ location, selected = false, openPopup = false, onSelect }) {
   const markerRef = useRef(null);
@@ -30,6 +32,8 @@ export default function CategoryMarker({ location, selected = false, openPopup =
     if (openPopup) markerRef.current?.openPopup();
   }, [openPopup]);
 
+  if (!isValidCoordinates(location.latitude, location.longitude)) return null;
+
   return (
     <Marker
       ref={markerRef}
@@ -45,6 +49,8 @@ export default function CategoryMarker({ location, selected = false, openPopup =
         <strong>{location.name}</strong>
         <br />
         <span>{location.category}</span>
+        <br />
+        <DistanceLabel location={location} showOrigin />
         {location.description && <p className="map-popup-description">{location.description}</p>}
         {location.opening_hours && <p className="map-popup-hours">{location.opening_hours}</p>}
         <div className="map-popup-actions">

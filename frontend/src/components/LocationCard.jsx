@@ -2,6 +2,7 @@ import { Link } from "react-router-dom";
 import { getImageUrl } from "../services/api";
 import FavoriteButton from "./FavoriteButton";
 import ShareLocationButton from "./ShareLocationButton";
+import DistanceLabel from "./DistanceLabel";
 
 export default function LocationCard({ location }) {
   return (
@@ -15,6 +16,7 @@ export default function LocationCard({ location }) {
         <p className="location-category">{location.category}</p>
         <h3 className="location-name">{location.name}</h3>
         <p className="location-description">{location.description}</p>
+        <DistanceLabel location={location} />
         <Link className="location-link" to={`/locations/${location.id}`}>
           Explore location <span className="ml-1" aria-hidden="true">→</span>
         </Link>

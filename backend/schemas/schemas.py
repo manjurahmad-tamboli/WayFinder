@@ -1,8 +1,9 @@
 from datetime import datetime
+import math
 from typing import Literal
 from uuid import uuid4
 
-from pydantic import BaseModel, EmailStr, Field
+from pydantic import BaseModel, EmailStr, Field, field_serializer
 
 
 class CategoryOut(BaseModel):
@@ -15,12 +16,24 @@ class LocationOut(BaseModel):
     id: int
     name: str
     category: str
-    latitude: float
-    longitude: float
+    latitude: float | None
+    longitude: float | None
     description: str
     image: str
     opening_hours: str
     model_config = {"from_attributes": True}
+
+    @field_serializer("latitude")
+    def sanitize_latitude(self, value: float | None):
+        if value is None or not math.isfinite(value) or not -90 <= value <= 90:
+            return None
+        return value
+
+    @field_serializer("longitude")
+    def sanitize_longitude(self, value: float | None):
+        if value is None or not math.isfinite(value) or not -180 <= value <= 180:
+            return None
+        return value
 
 
 class CategoryMatchOut(CategoryOut):
@@ -34,7 +47,7 @@ class LocationSearchOut(BaseModel):
 
 
 class NearbyLocationOut(LocationOut):
-    distance_meters: int = Field(ge=0)
+    distance_meters: int | None = Field(default=None, ge=0)
 
 
 class SearchRequest(BaseModel):

@@ -8,6 +8,8 @@ const api = axios.create({
   baseURL: API_BASE_URL,
 })
 
+let allLocationsRequest = null
+
 export const getImageUrl = (imagePath) => {
   if (!imagePath) return ''
 
@@ -32,10 +34,13 @@ export const getImageUrl = (imagePath) => {
   return `${API_BASE_URL}/static/images/${cleanPath}`
 }
 
-export const getLocations = (category) =>
-  api.get('/locations', {
-    params: category ? { category } : {},
-  })
+export const getLocations = (category) => {
+  if (category) return api.get('/locations', { params: { category } })
+  if (!allLocationsRequest) {
+    allLocationsRequest = api.get('/locations').finally(() => { allLocationsRequest = null })
+  }
+  return allLocationsRequest
+}
 
 export const getLocation = (id) =>
   api.get(`/locations/${id}`)
@@ -55,9 +60,9 @@ export const getCampusSearch = (query, { category, signal, limit = 12 } = {}) =>
     signal,
   })
 
-export const getNearbyLocations = ({ latitude, longitude, query, category, signal, limit = 10 }) =>
+export const getNearbyLocations = ({ latitude, longitude, query, category, sortBy = 'distance', signal, limit = 10 }) =>
   api.get('/locations/nearby', {
-    params: { latitude, longitude, q: query || undefined, category: category || undefined, limit },
+    params: { latitude, longitude, q: query || undefined, category: category || undefined, sort_by: sortBy, limit },
     signal,
   })
 

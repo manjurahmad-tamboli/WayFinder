@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, HTTPException, Query
+from typing import Literal
 from sqlalchemy import select
 from sqlalchemy.orm import Session
 from database.database import get_db
@@ -46,6 +47,7 @@ def get_nearby_locations(
     longitude: float = Query(ge=-180, le=180),
     q: str | None = Query(default=None, max_length=100),
     category: str | None = Query(default=None, max_length=60),
+    sort_by: Literal["distance", "relevance"] = "distance",
     limit: int = Query(default=10, ge=1, le=25),
     db: Session = Depends(get_db),
 ):
@@ -56,21 +58,33 @@ def get_nearby_locations(
         query=q or "",
         category=category,
         limit=limit,
+        sort_by=sort_by,
+        include_invalid=True,
     )
     return [
         {
             "id": location.id,
             "name": location.name,
             "category": location.category,
-            "latitude": location.latitude,
-            "longitude": location.longitude,
+            "latitude": location.latitude if _valid_location_coordinates(location.latitude, location.longitude) else None,
+            "longitude": location.longitude if _valid_location_coordinates(location.latitude, location.longitude) else None,
             "description": location.description,
             "image": location.image,
             "opening_hours": location.opening_hours,
-            "distance_meters": round(distance),
+            "distance_meters": round(distance) if distance is not None else None,
         }
         for location, distance in nearby
     ]
+
+
+def _valid_location_coordinates(latitude, longitude):
+    try:
+        lat = float(latitude)
+        lon = float(longitude)
+    except (TypeError, ValueError):
+        return False
+    import math
+    return math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180
 
 
 @router.get("/locations/{location_id}", response_model=LocationOut)

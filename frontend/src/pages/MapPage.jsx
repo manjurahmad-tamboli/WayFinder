@@ -10,10 +10,13 @@ import SearchBar from "../components/SearchBar";
 import useLocations from "../hooks/useLocations";
 import { createRoute, getCampusSearch, getCategories } from "../services/api";
 import { useMapActions } from "../contexts/MapActionContext";
+import { useDistance } from "../contexts/DistanceContext";
+import { createCampusOrigin, createGpsOrigin, isValidCoordinates, sortLocationsByDistance } from "../services/distanceUtils";
 
 export default function MapPage() {
   const [params, setParams] = useSearchParams();
   const { mapAction, dispatchMapAction } = useMapActions();
+  const { origin, campusReference, setOrigin: setDistanceOrigin, ensureCampusReference } = useDistance();
   const goTo = useNavigate();
   const category = params.get("category") || "";
   const queryParam = params.get("q") || "";
@@ -25,6 +28,7 @@ export default function MapPage() {
   const [searchError, setSearchError] = useState("");
   const [searchRetry, setSearchRetry] = useState(0);
   const [query, setQuery] = useState(queryParam);
+  const [sortMode, setSortMode] = useState(() => queryParam ? "relevance" : "name");
   const [sourceId, setSourceId] = useState(params.get("from") || "");
   const [destinationId, setDestinationId] = useState(destinationParam);
   const [selectedLocationId, setSelectedLocationId] = useState(
@@ -47,7 +51,11 @@ export default function MapPage() {
   }, []);
   useEffect(() => {
     setQuery(queryParam);
+    setSortMode(queryParam ? "relevance" : "name");
   }, [queryParam]);
+  useEffect(() => {
+    if (!origin) ensureCampusReference();
+  }, [origin, ensureCampusReference]);
   useEffect(() => {
     if (!queryParam) {
       setSearching(false);
@@ -93,13 +101,14 @@ export default function MapPage() {
       setSourceMode("current");
       setSourceId("");
       setCurrentPosition(firstPoint ? { latitude: firstPoint[0], longitude: firstPoint[1] } : null);
+      if (firstPoint) setDistanceOrigin(createGpsOrigin({ latitude: firstPoint[0], longitude: firstPoint[1] }));
       setLocationMessage("Route start shared with WayFinder AI.");
     } else if (mapAction.source_id) {
       setSourceMode("manual");
       setSourceId(String(mapAction.source_id));
       setCurrentPosition(null);
     }
-  }, [mapAction]);
+  }, [mapAction, setDistanceOrigin]);
 
   useEffect(() => {
     if (mapAction?.type !== "clear_selection" || lastAppliedRouteAction.current === mapAction.eventId) return;
@@ -132,18 +141,41 @@ export default function MapPage() {
   }
 
   const all = useMemo(() => initial.length ? initial : locations, [initial, locations]);
+  const sortedLocations = useMemo(
+    () => sortMode === "distance" ? sortLocationsByDistance(locations, origin) : locations,
+    [locations, origin, sortMode],
+  );
+
+  useEffect(() => {
+    if (sourceMode !== "manual" || !sourceId) return;
+    const manualSource = all.find((item) => Number(item.id) === Number(sourceId));
+    const campusOrigin = createCampusOrigin(manualSource);
+    if (campusOrigin) setDistanceOrigin(campusOrigin);
+  }, [all, setDistanceOrigin, sourceId, sourceMode]);
 
   function useManualStart() {
     setSourceMode("manual");
     setLocationMessage("");
     setRoute(null);
+    if (sourceId) {
+      const campusOrigin = createCampusOrigin(all.find((item) => Number(item.id) === Number(sourceId)));
+      setDistanceOrigin(campusOrigin);
+    } else setDistanceOrigin(null);
   }
 
   function requestCurrentLocation() {
     if (!navigator.geolocation) {
-      setSourceMode("manual");
-      setLocationMessage("Location is not available in this browser. Choose a campus place below.");
-      toast.error("Location is unavailable. Choose a campus start point instead.");
+      if (campusReference) {
+        setSourceMode("reference");
+        setDistanceOrigin(campusReference);
+        setLocationMessage(`Using ${campusReference.name} as the campus reference point, not your live position.`);
+        toast.error("GPS is unavailable; using the campus reference point");
+      } else {
+        setSourceMode("manual");
+        setDistanceOrigin(null);
+        setLocationMessage("Location is not available in this browser. Choose a campus place below.");
+        toast.error("Location is unavailable. Choose a campus start point instead.");
+      }
       return;
     }
 
@@ -151,7 +183,18 @@ export default function MapPage() {
     setLocationMessage("Requesting your location…");
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        setCurrentPosition({ latitude: coords.latitude, longitude: coords.longitude });
+        const gpsOrigin = createGpsOrigin(coords);
+        if (!gpsOrigin) {
+          setLocating(false);
+          setSourceMode(campusReference ? "reference" : "manual");
+          setDistanceOrigin(campusReference || null);
+          setLocationMessage(campusReference
+            ? `The browser returned invalid coordinates. Using ${campusReference.name} as the campus reference point.`
+            : "The browser returned invalid coordinates. Choose a campus starting place manually.");
+          return;
+        }
+        setCurrentPosition({ latitude: gpsOrigin.latitude, longitude: gpsOrigin.longitude });
+        setDistanceOrigin(gpsOrigin);
         setSourceMode("current");
         setLocationMessage("Using your current position as the route start.");
         setRoute(null);
@@ -166,11 +209,14 @@ export default function MapPage() {
           3: "The location request timed out. Try again or choose a start manually.",
         };
         const message = messages[geolocationError.code] || "Could not get your location. Choose a start manually.";
-        setSourceMode("manual");
+        setSourceMode(campusReference ? "reference" : "manual");
         setCurrentPosition(null);
-        setLocationMessage(message);
+        setDistanceOrigin(campusReference || null);
+        setLocationMessage(campusReference
+          ? `${message} Using ${campusReference.name} as the campus reference point, not your live position.`
+          : message);
         setLocating(false);
-        toast.error(message);
+        toast.error(campusReference ? "GPS unavailable; using the campus reference point" : message);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
     );
@@ -179,9 +225,17 @@ export default function MapPage() {
   async function createWalkingRoute() {
     const manualSource = all.find((item) => item.id === Number(sourceId));
     const destination = all.find((item) => item.id === Number(destinationId));
-    const source = sourceMode === "current" ? currentPosition : manualSource;
-    if (!source || !destination || (sourceMode === "manual" && manualSource.id === destination.id)) {
-      toast.error(sourceMode === "current" ? "Choose a destination" : "Choose two different locations");
+    const source = sourceMode === "current" ? currentPosition : sourceMode === "reference" ? campusReference : createCampusOrigin(manualSource);
+    if (!source) {
+      toast.error("Choose a starting point with valid coordinates");
+      return;
+    }
+    if (!destination || !isValidCoordinates(destination.latitude, destination.longitude)) {
+      toast.error("Choose a destination with valid coordinates");
+      return;
+    }
+    if (sourceMode === "manual" && manualSource.id === destination.id) {
+      toast.error("Choose two different locations");
       return;
     }
     setRouting(true);
@@ -232,19 +286,37 @@ export default function MapPage() {
           <p className="eyebrow">Walking directions</p>
           <h2 className="section-title">Plan your route</h2>
           <span className="route-label">Start from</span>
-          <div className="start-mode-switch" role="group" aria-label="Choose how to set your starting point">
+          <div className={`start-mode-switch${campusReference ? " has-reference" : ""}`} role="group" aria-label="Choose how to set your starting point">
             <button type="button" className={sourceMode === "current" ? "start-mode active" : "start-mode"} onClick={requestCurrentLocation} disabled={locating}>
               <span aria-hidden="true">◎</span> {locating ? "Locating…" : "My location"}
             </button>
             <button type="button" className={sourceMode === "manual" ? "start-mode active" : "start-mode"} onClick={useManualStart}>
               <span aria-hidden="true">⌖</span> Choose place
             </button>
+            {campusReference && <button type="button" className={sourceMode === "reference" ? "start-mode active" : "start-mode"} onClick={() => {
+              setSourceMode("reference");
+              setCurrentPosition(null);
+              setDistanceOrigin(campusReference);
+              setLocationMessage(`Using ${campusReference.name} as the campus reference point, not your live position.`);
+              setRoute(null);
+            }}>
+              <span aria-hidden="true">⌖</span> Campus ref
+            </button>}
           </div>
 
           {sourceMode === "manual" ? (
             <>
               <label className="route-label" htmlFor="route-start">Starting place</label>
-              <select id="route-start" className="route-select" value={sourceId} onChange={(event) => { setSourceId(event.target.value); setSelectedLocationId(event.target.value ? Number(event.target.value) : null); setRoute(null); }}>
+              <select id="route-start" className="route-select" value={sourceId} onChange={(event) => {
+                const nextId = event.target.value;
+                const nextLocation = all.find((item) => Number(item.id) === Number(nextId));
+                const nextOrigin = nextId ? createCampusOrigin(nextLocation) : null;
+                setSourceId(nextId);
+                setDistanceOrigin(nextOrigin);
+                setSelectedLocationId(nextId ? Number(nextId) : null);
+                setRoute(null);
+                if (nextId && !nextOrigin) toast.error("This place has missing or invalid coordinates");
+              }}>
                 <option value="">Choose starting point</option>
                 {all.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
@@ -252,7 +324,9 @@ export default function MapPage() {
           ) : (
             <div className="current-location-status" role="status">
               <span className="current-location-dot" aria-hidden="true" />
-              <span>{currentPosition ? "Current position ready" : locationMessage || "Tap My location to request your position."}</span>
+              <span>{sourceMode === "reference"
+                ? locationMessage || `${campusReference?.name || "Campus reference"} is a configured reference point, not a live position.`
+                : currentPosition ? "Current position ready" : locationMessage || "Tap My location to request your position."}</span>
             </div>
           )}
           {locationMessage && sourceMode === "manual" && <p className="location-fallback-message" role="status">{locationMessage}</p>}
@@ -272,7 +346,7 @@ export default function MapPage() {
             <div className="route-result">
               <p className="route-algorithm">Shortest path · {route.algorithm}</p>
               <div className="route-summary">
-                <div className="route-metric">Total distance<strong>{route.distance_meters} m</strong></div>
+                <div className="route-metric">Walking-route distance<strong>{route.distance_meters} m</strong></div>
                 <div className="route-metric">Estimated walk<strong>~{route.walking_minutes} min</strong></div>
               </div>
               <h3 className="directions-heading">Step-by-step</h3>
@@ -298,6 +372,22 @@ export default function MapPage() {
           <p className="eyebrow">Campus directory</p>
           <h2 className="section-title">{category || "All locations"}</h2>
         </div>
+        <label className="directory-sort-control">
+          <span>Sort by</span>
+          <select className="route-select" aria-label="Sort locations" value={sortMode} onChange={(event) => setSortMode(event.target.value)}>
+            {queryParam ? (
+              <>
+                <option value="relevance">Best match</option>
+                <option value="distance">Distance · nearest first</option>
+              </>
+            ) : (
+              <>
+                <option value="name">Name</option>
+                <option value="distance">Distance · nearest first</option>
+              </>
+            )}
+          </select>
+        </label>
       </Reveal>
       {searchError && queryParam ? (
         <div className="panel panel-pad search-results-error" role="alert">
@@ -310,7 +400,7 @@ export default function MapPage() {
         </div>
       ) : locations.length ? (
         <Reveal className="search-directory-grid" delay={120}>
-          {locations.map((item) => (
+          {sortedLocations.map((item) => (
             <SearchResultCard
               key={item.id}
               location={item}

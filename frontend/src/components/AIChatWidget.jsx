@@ -6,6 +6,7 @@ import { getAssistantHealth, getLocations, sendAssistantMessage } from "../servi
 import { useMapActions } from "../contexts/MapActionContext";
 import FavoriteButton from "./FavoriteButton";
 import ShareLocationButton from "./ShareLocationButton";
+import DistanceLabel from "./DistanceLabel";
 
 const WELCOME_TEXT = "Hello! I'm your AI Campus Assistant. I can help you find departments, buildings, facilities and directions around your campus. What are you looking for today?";
 const SUGGESTIONS = [
@@ -37,7 +38,8 @@ function LocationResult({ location, onShowMap }) {
       <div className="ai-location-icon"><MapPin size={15} aria-hidden="true" /></div>
       <div className="ai-location-copy">
         <strong>{location.name}</strong>
-        <span>{location.category}{location.distance_meters != null ? ` · ${location.distance_meters < 1000 ? `${location.distance_meters} m` : `${(location.distance_meters / 1000).toFixed(1)} km`} away` : ""}</span>
+        <span>{location.category}</span>
+        <DistanceLabel location={location} distanceMeters={location.distance_meters} />
       </div>
       <FavoriteButton location={location} className="ai-favorite-button" />
       <ShareLocationButton location={location} className="ai-share-button" />

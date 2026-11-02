@@ -1,6 +1,8 @@
 import { ArrowUpRight, Layers3, MapPin } from "lucide-react";
 import CategoryIcon from "./CategoryIcon";
+import DistanceLabel from "./DistanceLabel";
 import { getCategoryStyle } from "./categoryConfig";
+export { formatDistance } from "../services/distanceUtils";
 
 function HighlightedText({ text, query }) {
   const words = query.trim().split(/\s+/).filter((word) => word.length > 1);
@@ -35,18 +37,12 @@ export function SearchSuggestion({ item, kind, query, active, onSelect, optionId
         <span>
           {isCategory ? `${item.location_count} campus places` : <><HighlightedText text={item.category} query={query} />{item.description ? ` · ${item.description}` : ""}</>}
         </span>
+        {!isCategory && <DistanceLabel location={item} />}
       </span>
       <span className="search-suggestion-trailing" aria-hidden="true">
         {isCategory ? "Category" : <><MapPin size={14} /><ArrowUpRight size={14} /></>}
       </span>
     </button>
   );
-}
-
-export function formatDistance(distanceMeters) {
-  if (!Number.isFinite(Number(distanceMeters))) return "";
-  const meters = Math.max(0, Number(distanceMeters));
-  if (meters < 1000) return `${Math.round(meters)} m`;
-  return `${(meters / 1000).toFixed(meters < 10000 ? 1 : 0)} km`;
 }
 

@@ -7,7 +7,7 @@ from sqlalchemy.pool import StaticPool
 from database.database import Base
 from models import Category, Location
 from routers.locations import autocomplete_locations, get_nearby_locations, search_campus
-from schemas.schemas import LocationSearchOut, NearbyLocationOut
+from schemas.schemas import LocationOut, LocationSearchOut, NearbyLocationOut
 from services.campus_assistant import _search_locations
 from services.location_search import (
     category_matches_query,
@@ -48,6 +48,7 @@ class UniversalLocationSearchTests(unittest.TestCase):
             Location(name="Open Theatre", category="Facilities", latitude=16.8445, longitude=74.6006, description="Events Area", image="theatre.jpg", opening_hours="Open"),
             Location(name="Parking", category="Facilities", latitude=16.8458, longitude=74.6020, description="Vehicle Parking", image="parking.jpg", opening_hours="Open"),
             Location(name="Art Studio", category="Arts & Culture", latitude=16.8447, longitude=74.6007, description="Student arts space", image="arts.jpg", opening_hours="9 AM - 5 PM"),
+            Location(name="Invalid Coordinate Place", category="Academic", latitude=120.0, longitude=74.6, description="Invalid test record", image="invalid.jpg", opening_hours="Closed"),
         ])
         self.db.commit()
 
@@ -97,6 +98,40 @@ class UniversalLocationSearchTests(unittest.TestCase):
         hostel = find_nearby_locations(self.db, 16.8454, 74.6020, category="hostel")
         self.assertEqual([item.name for item, _ in hostel], ["Cyber Hostel"])
 
+    def test_nearby_results_ignore_invalid_database_coordinates(self):
+        nearby = find_nearby_locations(self.db, 16.8459, 74.6026)
+        self.assertNotIn("Invalid Coordinate Place", {item.name for item, _ in nearby})
+
+    def test_nearby_api_keeps_invalid_coordinate_places_without_a_distance(self):
+        nearby = get_nearby_locations(
+            latitude=16.8459,
+            longitude=74.6026,
+            q=None,
+            category=None,
+            sort_by="distance",
+            limit=25,
+            db=self.db,
+        )
+        invalid = next(item for item in nearby if item["name"] == "Invalid Coordinate Place")
+        self.assertIsNone(invalid["latitude"])
+        self.assertIsNone(invalid["longitude"])
+        self.assertIsNone(invalid["distance_meters"])
+
+    def test_location_response_sanitizes_out_of_range_coordinates(self):
+        invalid = self.db.query(Location).filter_by(name="Invalid Coordinate Place").one()
+        response = LocationOut.model_validate(invalid).model_dump()
+        self.assertIsNone(response["latitude"])
+        self.assertEqual(response["longitude"], 74.6)
+
+    def test_nearby_rejects_invalid_origin_coordinates(self):
+        with self.assertRaises(ValueError):
+            find_nearby_locations(self.db, 91, 74.6026)
+
+    def test_nearby_search_can_keep_relevance_order(self):
+        matching, _ = search_campus_locations(self.db, "can", limit=10)
+        nearby = find_nearby_locations(self.db, 16.8450, 74.6042, query="can", sort_by="relevance")
+        self.assertEqual([item.id for item, _ in nearby], [item.id for item in matching])
+
     def test_search_and_nearby_api_shapes_match_response_schemas(self):
         autocomplete = LocationSearchOut.model_validate(autocomplete_locations(q="can", limit=8, db=self.db))
         self.assertIn("Government Canteen", {item.name for item in autocomplete.locations})
@@ -108,6 +143,7 @@ class UniversalLocationSearchTests(unittest.TestCase):
             longitude=74.6018,
             q="food",
             category=None,
+            sort_by="distance",
             limit=10,
             db=self.db,
         )

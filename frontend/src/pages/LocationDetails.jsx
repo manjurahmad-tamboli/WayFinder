@@ -8,6 +8,7 @@ import Reveal from "../components/Reveal";
 import { getImageUrl, getLocation } from "../services/api";
 import FavoriteButton from "../components/FavoriteButton";
 import ShareLocationButton from "../components/ShareLocationButton";
+import DistanceLabel from "../components/DistanceLabel";
 
 export default function LocationDetails() {
   const { id } = useParams();
@@ -41,6 +42,7 @@ export default function LocationDetails() {
           <p className="eyebrow">{location.category}</p>
           <h1 className="page-title">{location.name}</h1>
           <p className="page-lead">{location.description}</p>
+          <DistanceLabel location={location} showOrigin />
           <div className="detail-meta"><span className="detail-meta-icon">◷</span><span><strong>Opening hours</strong><br />{location.opening_hours}</span></div>
           <div className="detail-meta"><span className="detail-meta-icon">⌖</span><span><strong>Coordinates</strong><br />{Number(location.latitude).toFixed(5)}, {Number(location.longitude).toFixed(5)}</span></div>
           <div className="location-detail-actions">

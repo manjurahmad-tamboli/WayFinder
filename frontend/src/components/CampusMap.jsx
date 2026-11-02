@@ -13,6 +13,7 @@ import "leaflet/dist/leaflet.css";
 import CategoryLegend from "./CategoryLegend";
 import CategoryMarker from "./CategoryMarker";
 import useCategoryFilter from "../hooks/useCategoryFilter";
+import { isValidCoordinates } from "../services/distanceUtils";
 
 const EMPTY_LIST = [];
 
@@ -29,7 +30,7 @@ function FitMap({ locations, route }) {
   useEffect(() => {
     const points = route?.length
       ? route
-      : locations.map((location) => [
+      : locations.filter((location) => isValidCoordinates(location.latitude, location.longitude)).map((location) => [
           location.latitude,
           location.longitude,
         ]);
@@ -50,7 +51,9 @@ function FocusSelected({ locations, selectedLocationId, route }) {
   useEffect(() => {
     if (route?.length || selectedLocationId == null) return;
     const location = locations.find((item) => Number(item.id) === Number(selectedLocationId));
-    if (location) map.flyTo([location.latitude, location.longitude], Math.max(map.getZoom(), 18), { duration: 0.55 });
+    if (location && isValidCoordinates(location.latitude, location.longitude)) {
+      map.flyTo([location.latitude, location.longitude], Math.max(map.getZoom(), 18), { duration: 0.55 });
+    }
   }, [locations, map, route, selectedLocationId]);
   return null;
 }

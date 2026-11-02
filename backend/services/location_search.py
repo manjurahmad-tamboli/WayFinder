@@ -7,6 +7,7 @@ common words to equivalent search vocabulary; they never create locations.
 import re
 import unicodedata
 from collections import Counter
+import math
 
 from sqlalchemy import select
 from sqlalchemy.orm import Session
@@ -203,8 +204,14 @@ def find_nearby_locations(
     limit: int = 10,
     known_locations: list[Location] | None = None,
     known_categories: list[Category] | None = None,
-) -> list[tuple[Location, float]]:
-    """Sort real matching records by great-circle distance from the origin."""
+    sort_by: str = "distance",
+    include_invalid: bool = False,
+) -> list[tuple[Location, float | None]]:
+    """Measure real matching records from the origin and sort by distance or relevance."""
+    if not _valid_coordinates(latitude, longitude):
+        raise ValueError("Origin coordinates must be valid latitude and longitude values")
+    if sort_by not in {"distance", "relevance"}:
+        raise ValueError("sort_by must be 'distance' or 'relevance'")
     if clean_search_query(query):
         locations, _ = search_campus_locations(
             db,
@@ -220,9 +227,22 @@ def find_nearby_locations(
         if wanted_category:
             locations = [item for item in locations if normalize_text(item.category) == wanted_category]
 
-    measured = [
-        (location, haversine_meters(latitude, longitude, location.latitude, location.longitude))
-        for location in locations
-    ]
-    measured.sort(key=lambda entry: (entry[1], entry[0].name.casefold()))
+    measured = []
+    for location in locations:
+        if not _valid_coordinates(location.latitude, location.longitude):
+            if include_invalid:
+                measured.append((location, None))
+            continue
+        measured.append((location, haversine_meters(latitude, longitude, location.latitude, location.longitude)))
+    if sort_by == "distance":
+        measured.sort(key=lambda entry: (entry[1] is None, entry[1] if entry[1] is not None else 0, entry[0].name.casefold()))
     return measured[:limit]
+
+
+def _valid_coordinates(latitude: object, longitude: object) -> bool:
+    try:
+        lat = float(latitude)
+        lon = float(longitude)
+    except (TypeError, ValueError):
+        return False
+    return math.isfinite(lat) and math.isfinite(lon) and -90 <= lat <= 90 and -180 <= lon <= 180

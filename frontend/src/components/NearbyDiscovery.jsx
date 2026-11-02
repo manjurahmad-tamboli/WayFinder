@@ -4,15 +4,17 @@ import { useNavigate } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import { useMapActions } from "../contexts/MapActionContext";
+import { useDistance } from "../contexts/DistanceContext";
 import { createRoute, getCategories, getLocations, getNearbyLocations } from "../services/api";
+import { createCampusOrigin, requestGpsOrigin, resolveGpsFailureOrigin } from "../services/distanceUtils";
 import SearchResultCard from "./SearchResultCard";
 
 export default function NearbyDiscovery({ query = "", onClose }) {
   const navigate = useNavigate();
   const { dispatchMapAction } = useMapActions();
+  const { origin, campusReference, setOrigin, setReferenceLocations, ensureCampusReference } = useDistance();
   const [categories, setCategories] = useState([]);
   const [category, setCategory] = useState("");
-  const [origin, setOrigin] = useState(null);
   const [manualMode, setManualMode] = useState(false);
   const [manualLocations, setManualLocations] = useState([]);
   const [manualLoading, setManualLoading] = useState(false);
@@ -20,6 +22,7 @@ export default function NearbyDiscovery({ query = "", onClose }) {
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
   const [navigatingId, setNavigatingId] = useState(null);
+  const [sortBy, setSortBy] = useState("distance");
   const requestNumber = useRef(0);
 
   useEffect(() => {
@@ -43,6 +46,7 @@ export default function NearbyDiscovery({ query = "", onClose }) {
           longitude: origin.longitude,
           query: query.trim(),
           category,
+          sortBy,
           limit: 10,
           signal: controller.signal,
         });
@@ -61,48 +65,70 @@ export default function NearbyDiscovery({ query = "", onClose }) {
       window.clearTimeout(timer);
       controller.abort();
     };
-  }, [origin, query, category]);
+  }, [origin, query, category, sortBy]);
+
+  useEffect(() => {
+    if (!origin) ensureCampusReference();
+  }, [origin, ensureCampusReference]);
+
+  useEffect(() => {
+    if (!query.trim()) setSortBy("distance");
+  }, [query]);
 
   function useManualStartingPoint() {
     setManualMode(true);
+    setOrigin(null);
     setError("");
     if (manualLocations.length || manualLoading) return;
     setManualLoading(true);
     getLocations()
-      .then(({ data }) => setManualLocations(data))
+      .then(({ data }) => {
+        setManualLocations(data);
+        setReferenceLocations(data);
+      })
       .catch(() => setError("Campus starting places could not be loaded. Please retry."))
       .finally(() => setManualLoading(false));
   }
 
-  function requestCurrentLocation() {
+  async function requestCurrentLocation() {
     if (!navigator.geolocation) {
-      setError("This browser does not provide GPS location. Choose a campus starting place instead.");
-      useManualStartingPoint();
+      const message = campusReference
+        ? `GPS is unavailable. Using ${campusReference.name} as the campus reference point.`
+        : "This browser does not provide GPS location. Choose a campus starting place instead.";
+      setError(message);
+      if (campusReference) {
+        setOrigin(campusReference);
+        setManualMode(false);
+      } else useManualStartingPoint();
       return;
     }
     setError("");
-    navigator.geolocation.getCurrentPosition(
-      ({ coords }) => {
-        setOrigin({
-          latitude: coords.latitude,
-          longitude: coords.longitude,
-          name: "Your current location",
-          type: "gps",
-        });
+    try {
+      const gpsOrigin = await requestGpsOrigin(navigator.geolocation);
+      setOrigin(gpsOrigin);
+      setManualMode(false);
+      toast.success("Nearby search is using your current location");
+    } catch (locationError) {
+      const message = locationError.code === 1
+        ? "Location access was denied."
+        : locationError.message === "The browser returned invalid coordinates"
+          ? locationError.message
+          : "Your location could not be determined.";
+      const fallbackOrigin = resolveGpsFailureOrigin(campusReference);
+      const fallback = fallbackOrigin
+        ? `${message} Measuring from ${fallbackOrigin.name} (campus reference point), not your live location.`
+        : `${message} Choose a campus starting point manually.`;
+      setError(fallback);
+      if (fallbackOrigin) {
+        setOrigin(fallbackOrigin);
         setManualMode(false);
-        toast.success("Nearby search is using your current location");
-      },
-      (locationError) => {
-        const message = locationError.code === 1
-          ? "Location access was denied. Choose a campus starting point manually."
-          : "Your location could not be determined. Choose a campus starting point manually.";
-        setError(message);
+        toast.error("GPS is unavailable; using the campus reference point");
+      } else {
         setOrigin(null);
         useManualStartingPoint();
         toast.error("GPS is unavailable. Select a campus start point instead.");
-      },
-      { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
-    );
+      }
+    }
   }
 
   function chooseManualLocation(locationId) {
@@ -111,8 +137,14 @@ export default function NearbyDiscovery({ query = "", onClose }) {
       setOrigin(null);
       return;
     }
+    const campusOrigin = createCampusOrigin(location);
+    if (!campusOrigin) {
+      setError("This campus place has missing or invalid coordinates. Choose another starting place.");
+      return;
+    }
     setError("");
-    setOrigin({ ...location, type: "campus" });
+    setOrigin(campusOrigin);
+    setManualMode(false);
     toast.success(`Nearby places measured from ${location.name}`);
   }
 
@@ -136,7 +168,7 @@ export default function NearbyDiscovery({ query = "", onClose }) {
         type: "show_route",
         route: data,
         destination_id: location.id,
-        source_id: origin.type === "campus" ? origin.id : null,
+        source_id: origin.type === "campus" || origin.type === "reference" ? origin.id : null,
         source_is_current: origin.type === "gps",
       });
       navigate(`/map?destination=${location.id}`);
@@ -160,11 +192,11 @@ export default function NearbyDiscovery({ query = "", onClose }) {
       </div>
 
       <div className="nearby-origin-row">
-        {origin ? (
+        {origin && !manualMode ? (
           <div className="nearby-origin-status" role="status">
             <span className="nearby-origin-dot" />
-            <span>Measuring from <strong>{origin.name}</strong></span>
-            <button type="button" onClick={() => { setOrigin(null); setLocations([]); }}>Change</button>
+            <span>Measuring from <strong>{origin.name}{origin.type === "reference" ? " · campus reference" : ""}</strong></span>
+            <button type="button" onClick={() => { setOrigin(null); setLocations([]); setManualMode(true); useManualStartingPoint(); }}>Change</button>
           </div>
         ) : (
           <>
@@ -174,6 +206,9 @@ export default function NearbyDiscovery({ query = "", onClose }) {
             <button type="button" className="nearby-origin-link" onClick={useManualStartingPoint}>
               <MapPin size={15} /> Choose a campus start
             </button>
+            {campusReference && <button type="button" className="nearby-origin-link" onClick={() => { setOrigin(campusReference); setManualMode(false); setError(""); }}>
+              <MapPin size={15} /> Use {campusReference.name} reference
+            </button>}
           </>
         )}
       </div>
@@ -191,17 +226,23 @@ export default function NearbyDiscovery({ query = "", onClose }) {
 
       <div className="nearby-filter-row">
         <span><Search size={14} /> {query.trim() ? `Matching “${query.trim()}”` : "Any campus place"}</span>
-        <select className="route-select" aria-label="Filter nearby locations by category" value={category} onChange={(event) => setCategory(event.target.value)}>
-          <option value="">All categories</option>
-          {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
-        </select>
+        <div className="nearby-filter-controls">
+          <select className="route-select" aria-label="Filter nearby locations by category" value={category} onChange={(event) => setCategory(event.target.value)}>
+            <option value="">All categories</option>
+            {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
+          </select>
+          <select className="route-select nearby-sort" aria-label="Sort nearby results" value={sortBy} onChange={(event) => setSortBy(event.target.value)}>
+            <option value="distance">Nearest first</option>
+            <option value="relevance">{query.trim() ? "Best match" : "Name · A–Z"}</option>
+          </select>
+        </div>
       </div>
 
       {error && !manualMode && <p className="nearby-error" role="alert">{error}</p>}
-      {!origin ? (
+      {!origin || manualMode ? (
         <div className="nearby-empty-state">
           <LocateFixed size={20} />
-          <p>Choose GPS or a campus starting point to sort real locations by distance.</p>
+          <p>{manualMode ? "Select a campus starting point, use GPS, or measure from the labeled campus reference point." : "Choose GPS or a campus starting point to sort real locations by distance."}</p>
         </div>
       ) : loading ? (
         <div className="nearby-loading" role="status" aria-live="polite">
@@ -228,7 +269,7 @@ export default function NearbyDiscovery({ query = "", onClose }) {
           <p>No saved campus locations match this search. Try another keyword or category.</p>
         </div>
       )}
-      <p className="nearby-note"><AlertCircle size={13} /> Distances are calculated from your chosen coordinates; follow campus signs on foot.</p>
+      <p className="nearby-note"><AlertCircle size={13} /> Distances are straight-line Haversine measurements, not walking distances. Dijkstra walking-route distance is shown separately when you plan a route.</p>
     </section>
   );
 }
