@@ -1,6 +1,5 @@
 """Natural-language campus assistant endpoint."""
 
-import logging
 import os
 
 from fastapi import APIRouter, Depends, HTTPException
@@ -11,8 +10,9 @@ from schemas.schemas import ChatRequest, ChatResponse
 from services.campus_assistant import build_chat_response
 from services.rate_limit import check_chat_rate_limit
 from services.response_provider import has_provider_config, rephrase_answer
+from services.logging_utils import get_logger
 
-logger = logging.getLogger(__name__)
+logger = get_logger("ai")
 router = APIRouter(prefix="/api/ai", tags=["AI campus assistant"])
 
 
@@ -35,7 +35,10 @@ def chat(payload: ChatRequest, db: Session = Depends(get_db)) -> ChatResponse:
     except HTTPException:
         raise
     except Exception as error:
-        logger.exception("Campus assistant request failed")
+        logger.error(
+            "Campus assistant request failed",
+            extra={"event": "ai_request_failed", "path": "/api/ai/chat", "method": "POST", "status_code": 503, "error_type": type(error).__name__},
+        )
         raise HTTPException(
             status_code=503,
             detail="The campus assistant is temporarily unavailable. Please try again.",

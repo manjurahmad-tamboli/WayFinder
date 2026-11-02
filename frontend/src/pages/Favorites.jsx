@@ -8,12 +8,13 @@ import SearchResultCard from "../components/SearchResultCard";
 import useLocations from "../hooks/useLocations";
 import { useFavorites } from "../contexts/FavoritesContext";
 import { useMapActions } from "../contexts/MapActionContext";
+import ErrorNotice from "../components/ErrorNotice";
 
 export default function Favorites() {
   const navigate = useNavigate();
   const { dispatchMapAction } = useMapActions();
   const { favoriteIds, pruneFavorites } = useFavorites();
-  const { locations, loading, error } = useLocations();
+  const { locations, loading, error, retry } = useLocations();
 
   useEffect(() => {
     if (!loading && !error) pruneFavorites(locations.map((location) => location.id));
@@ -53,10 +54,7 @@ export default function Favorites() {
           <Link className="primary-button mt-3 px-5 py-3" to="/map"><MapPin size={16} /> Explore the campus</Link>
         </div>
       ) : error ? (
-        <div className="panel panel-pad favorites-error" role="alert">
-          <p>{error}</p>
-          <Link to="/map" className="inline-link">Open the campus map</Link>
-        </div>
+        <ErrorNotice message={error} onRetry={retry} />
       ) : loading ? (
         <Loader />
       ) : savedLocations.length ? (

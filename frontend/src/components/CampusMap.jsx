@@ -66,6 +66,8 @@ export default function CampusMap({
   onSelectLocation,
   mapAction = null,
 }) {
+  const [tileError, setTileError] = useState(false);
+  const [tileRetry, setTileRetry] = useState(0);
   const [localSelectedId, setLocalSelectedId] = useState(null);
   const [highlightedIds, setHighlightedIds] = useState([]);
   const lastHandledActionId = useRef(null);
@@ -152,8 +154,10 @@ export default function CampusMap({
         style={{ height: "100%", width: "100%" }}
       >
         <TileLayer
+          key={tileRetry}
           attribution='&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
           url="https://tile.openstreetmap.org/{z}/{x}/{y}.png"
+          eventHandlers={{ tileerror: () => setTileError(true) }}
         />
 
         <FitMap locations={locations} route={activeRoute} />
@@ -191,6 +195,10 @@ export default function CampusMap({
           />
         )}
       </MapContainer>
+      {tileError && <div className="map-tile-error" role="alert">
+        <span>The map background could not load. Your location markers are still available.</span>
+        <button type="button" onClick={() => { setTileError(false); setTileRetry((count) => count + 1); }}>Retry map</button>
+      </div>}
       <CategoryLegend
         locations={locations}
         selectedCategories={selectedCategories}

@@ -8,5 +8,5 @@ import './index.css'
 import 'leaflet/dist/leaflet.css'
 
 ReactDOM.createRoot(document.getElementById('root')).render(
-  <React.StrictMode><ThemeProvider><BrowserRouter><App /><Toaster position="top-right" toastOptions={{ duration: 3000, style: { background: 'var(--toast-bg)', color: 'var(--toast-text)', border: '1px solid var(--line-strong)' } }} /></BrowserRouter></ThemeProvider></React.StrictMode>,
+  <React.StrictMode><ThemeProvider><BrowserRouter><App /><Toaster position="top-right" toastOptions={{ duration: 3000, style: { background: 'var(--toast-bg)', color: 'var(--toast-text)', border: '1px solid var(--line-strong)', maxWidth: 'min(92vw, 420px)', overflowWrap: 'anywhere' } }} /></BrowserRouter></ThemeProvider></React.StrictMode>,
 )

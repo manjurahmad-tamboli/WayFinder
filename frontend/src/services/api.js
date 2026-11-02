@@ -1,12 +1,28 @@
 import axios from 'axios'
+import { getApiErrorMessage, isRequestCanceled } from './apiErrors'
+import { API_TIMEOUT_MS } from './apiConfig.js'
+
+export { API_TIMEOUT_MS } from './apiConfig.js'
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env?.VITE_API_BASE_URL ||
   'http://127.0.0.1:8000'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: API_TIMEOUT_MS,
 })
+
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (!isRequestCanceled(error)) {
+      error.userMessage = getApiErrorMessage(error)
+      error.isWayFinderApiError = true
+    }
+    return Promise.reject(error)
+  },
+)
 
 let allLocationsRequest = null
 
@@ -34,19 +50,19 @@ export const getImageUrl = (imagePath) => {
   return `${API_BASE_URL}/static/images/${cleanPath}`
 }
 
-export const getLocations = (category) => {
-  if (category) return api.get('/locations', { params: { category } })
+export const getLocations = (category, { signal } = {}) => {
+  if (category || signal) return api.get('/locations', { params: category ? { category } : {}, signal })
   if (!allLocationsRequest) {
     allLocationsRequest = api.get('/locations').finally(() => { allLocationsRequest = null })
   }
   return allLocationsRequest
 }
 
-export const getLocation = (id) =>
-  api.get(`/locations/${id}`)
+export const getLocation = (id, { signal } = {}) =>
+  api.get(`/locations/${id}`, { signal })
 
-export const getCategories = () =>
-  api.get('/categories')
+export const getCategories = ({ signal } = {}) =>
+  api.get('/categories', { signal })
 
 export const getLocationAutocomplete = (query, { signal, limit = 8 } = {}) =>
   api.get('/locations/autocomplete', {
@@ -78,5 +94,5 @@ export const sendContact = (data) =>
 export const sendAssistantMessage = (data) =>
   api.post('/api/ai/chat', data)
 
-export const getAssistantHealth = () =>
-  api.get('/api/ai/health')
+export const getAssistantHealth = ({ signal } = {}) =>
+  api.get('/api/ai/health', { signal })

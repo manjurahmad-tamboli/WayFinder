@@ -9,23 +9,39 @@ import { getImageUrl, getLocation } from "../services/api";
 import FavoriteButton from "../components/FavoriteButton";
 import ShareLocationButton from "../components/ShareLocationButton";
 import DistanceLabel from "../components/DistanceLabel";
+import ErrorNotice from "../components/ErrorNotice";
+import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
+import { isValidCoordinates } from "../services/distanceUtils";
 
 export default function LocationDetails() {
   const { id } = useParams();
   const [location, setLocation] = useState(null);
   const [error, setError] = useState("");
+  const [notFound, setNotFound] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
 
   useEffect(() => {
+    const controller = new AbortController();
     setLocation(null);
     setError("");
-    getLocation(id).then(({ data }) => setLocation(data)).catch(() => setError("This location could not be found."));
-  }, [id]);
+    setNotFound(false);
+    getLocation(id, { signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setLocation(data); })
+      .catch((requestError) => {
+        if (!controller.signal.aborted && !isRequestCanceled(requestError)) {
+          setError(getApiErrorMessage(requestError, "This location could not be loaded."));
+          setNotFound(requestError.response?.status === 404);
+        }
+      });
+    return () => controller.abort();
+  }, [id, retryCount]);
 
   if (error) {
     return (
       <section className="error-state">
-        <p className="eyebrow">Location unavailable</p>
-        <h1>{error}</h1>
+        <p className="eyebrow">Location details</p>
+        <h1 className="page-title">We couldn’t load this place.</h1>
+        <ErrorNotice message={error} onRetry={notFound ? null : () => setRetryCount((count) => count + 1)} />
         <Link className="primary-button mt-4 px-5 py-3" to="/map">Back to map</Link>
       </section>
     );
@@ -44,7 +60,7 @@ export default function LocationDetails() {
           <p className="page-lead">{location.description}</p>
           <DistanceLabel location={location} showOrigin />
           <div className="detail-meta"><span className="detail-meta-icon">◷</span><span><strong>Opening hours</strong><br />{location.opening_hours}</span></div>
-          <div className="detail-meta"><span className="detail-meta-icon">⌖</span><span><strong>Coordinates</strong><br />{Number(location.latitude).toFixed(5)}, {Number(location.longitude).toFixed(5)}</span></div>
+          <div className="detail-meta"><span className="detail-meta-icon">⌖</span><span><strong>Coordinates</strong><br />{isValidCoordinates(location.latitude, location.longitude) ? `${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}` : "Not available"}</span></div>
           <div className="location-detail-actions">
             <FavoriteButton location={location} showLabel className="detail-favorite-button" />
             <ShareLocationButton location={location} showLabel className="detail-share-button" />

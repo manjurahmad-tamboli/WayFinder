@@ -2,6 +2,7 @@ import { useState } from "react";
 import toast from "react-hot-toast";
 import { sendContact } from "../services/api";
 import Reveal from "../components/Reveal";
+import { getApiErrorMessage } from "../services/apiErrors";
 
 const initial = {
   name: "",
@@ -30,10 +31,7 @@ export default function Contact() {
       setForm(initial);
       toast.success("Thanks! Your message has been sent.");
     } catch (error) {
-      toast.error(
-        error.response?.data?.detail ||
-          "Message could not be sent. Please try again."
-      );
+      toast.error(getApiErrorMessage(error, "Message could not be sent. Please try again."));
     } finally {
       setSending(false);
     }

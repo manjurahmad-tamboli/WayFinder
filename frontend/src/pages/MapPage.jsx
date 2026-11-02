@@ -7,11 +7,13 @@ import Loader from "../components/Loader";
 import SearchResultCard from "../components/SearchResultCard";
 import Reveal from "../components/Reveal";
 import SearchBar from "../components/SearchBar";
+import ErrorNotice from "../components/ErrorNotice";
 import useLocations from "../hooks/useLocations";
 import { createRoute, getCampusSearch, getCategories } from "../services/api";
 import { useMapActions } from "../contexts/MapActionContext";
 import { useDistance } from "../contexts/DistanceContext";
 import { createCampusOrigin, createGpsOrigin, isValidCoordinates, sortLocationsByDistance } from "../services/distanceUtils";
+import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
 
 export default function MapPage() {
   const [params, setParams] = useSearchParams();
@@ -21,9 +23,11 @@ export default function MapPage() {
   const category = params.get("category") || "";
   const queryParam = params.get("q") || "";
   const destinationParam = params.get("destination") || "";
-  const { locations: initial, loading, error } = useLocations(category || undefined);
+  const { locations: initial, loading, error, retry: retryLocations } = useLocations(category || undefined);
   const [locations, setLocations] = useState([]);
   const [categories, setCategories] = useState([]);
+  const [categoriesError, setCategoriesError] = useState("");
+  const [categoriesRetry, setCategoriesRetry] = useState(0);
   const [searching, setSearching] = useState(false);
   const [searchError, setSearchError] = useState("");
   const [searchRetry, setSearchRetry] = useState(0);
@@ -47,8 +51,17 @@ export default function MapPage() {
     if (!queryParam) setLocations(initial);
   }, [initial, queryParam]);
   useEffect(() => {
-    getCategories().then(({ data }) => setCategories(data)).catch(() => {});
-  }, []);
+    const controller = new AbortController();
+    setCategoriesError("");
+    getCategories({ signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setCategories(data); })
+      .catch((requestError) => {
+        if (!controller.signal.aborted && !isRequestCanceled(requestError)) {
+          setCategoriesError(getApiErrorMessage(requestError, "Categories could not be loaded."));
+        }
+      });
+    return () => controller.abort();
+  }, [categoriesRetry]);
   useEffect(() => {
     setQuery(queryParam);
     setSortMode(queryParam ? "relevance" : "name");
@@ -74,10 +87,9 @@ export default function MapPage() {
           : "No matching campus locations");
       })
       .catch((requestError) => {
-        if (!controller.signal.aborted && requestError.code !== "ERR_CANCELED") {
-          setSearchError("Search could not be completed. Check your connection and retry.");
+        if (!controller.signal.aborted && !isRequestCanceled(requestError)) {
+          setSearchError(getApiErrorMessage(requestError, "Search could not be completed."));
           setLocations([]);
-          toast.error("Search could not be completed");
         }
       })
       .finally(() => {
@@ -251,13 +263,14 @@ export default function MapPage() {
       setSelectedLocationId(destination.id);
       toast.success("Shortest route generated");
     } catch (requestError) {
-      toast.error(requestError.response?.data?.detail || "Unable to generate route");
+      toast.error(getApiErrorMessage(requestError, "Unable to generate the walking route."));
     } finally {
       setRouting(false);
     }
   }
 
   if (loading) return <div className="page-wrap"><Loader /></div>;
+  if (error) return <section className="page-wrap"><ErrorNotice message={error} onRetry={retryLocations} /></section>;
 
   return (
     <section className="page-wrap map-page">
@@ -344,7 +357,6 @@ export default function MapPage() {
 
           {route && (
             <div className="route-result">
-              <p className="route-algorithm">Shortest path · {route.algorithm}</p>
               <div className="route-summary">
                 <div className="route-metric">Walking-route distance<strong>{route.distance_meters} m</strong></div>
                 <div className="route-metric">Estimated walk<strong>~{route.walking_minutes} min</strong></div>
@@ -366,6 +378,7 @@ export default function MapPage() {
           {categories.map((item) => <option key={item.id} value={item.name}>{item.name}</option>)}
         </select>
       </Reveal>
+      {categoriesError && <ErrorNotice message={categoriesError} onRetry={() => setCategoriesRetry((count) => count + 1)} />}
 
       <Reveal className="section-head location-results-head" delay={90}>
         <div>

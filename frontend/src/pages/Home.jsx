@@ -11,6 +11,8 @@ import SearchBar from "../components/SearchBar";
 import useLocations from "../hooks/useLocations";
 import { getCategories } from "../services/api";
 import { getCategoryStyle } from "../components/categoryConfig";
+import ErrorNotice from "../components/ErrorNotice";
+import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
 
 function RoutePreview() {
   return (
@@ -49,13 +51,27 @@ function RoutePreview() {
 }
 
 export default function Home() {
-  const { locations, loading, error } = useLocations();
+  const { locations, loading, error, retry: retryLocations } = useLocations();
   const [categories, setCategories] = useState([]);
+  const [categoriesError, setCategoriesError] = useState("");
+  const [categoriesRetry, setCategoriesRetry] = useState(0);
 
   useEffect(() => {
     toast.success("Welcome to WayFinder!");
-    getCategories().then(({ data }) => setCategories(data)).catch(() => {});
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCategoriesError("");
+    getCategories({ signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setCategories(data); })
+      .catch((requestError) => {
+        if (!controller.signal.aborted && !isRequestCanceled(requestError)) {
+          setCategoriesError(getApiErrorMessage(requestError, "Categories could not be loaded."));
+        }
+      });
+    return () => controller.abort();
+  }, [categoriesRetry]);
 
   return (
     <>
@@ -87,7 +103,7 @@ export default function Home() {
           </div>
           <Link to="/map" className="inline-link">Open full map <span aria-hidden="true">↗</span></Link>
         </div>
-        {loading ? <Loader /> : error ? <p className="panel panel-pad text-silver">{error}</p> : <CampusMap locations={locations} />}
+        {loading ? <Loader /> : error ? <ErrorNotice message={error} onRetry={retryLocations} /> : <CampusMap locations={locations} />}
       </Reveal>
 
       <Reveal as="section" className="page-section section-categories" delay={60}>
@@ -97,7 +113,7 @@ export default function Home() {
             <h2 className="section-title">Find the right category</h2>
           </div>
         </div>
-        <div className="category-grid">
+        {categoriesError ? <ErrorNotice message={categoriesError} onRetry={() => setCategoriesRetry((count) => count + 1)} /> : <div className="category-grid">
           {categories.map((category) => (
             <Link key={category.id} to={`/map?category=${encodeURIComponent(category.name)}`} className="category-card">
               <span
@@ -109,7 +125,7 @@ export default function Home() {
               <span className="category-name">{category.name}</span>
             </Link>
           ))}
-        </div>
+        </div>}
       </Reveal>
 
       <Reveal as="section" className="page-section" delay={100}>
@@ -120,7 +136,7 @@ export default function Home() {
             <p className="section-copy">Explore the places visitors look for most.</p>
           </div>
         </div>
-        {loading ? <Loader /> : (
+        {loading ? <Loader /> : error ? <p className="empty-state">Popular locations are unavailable until the campus data connection is restored.</p> : (
           <div className="location-grid">
             {locations.slice(0, 4).map((location) => <LocationCard key={location.id} location={location} />)}
           </div>

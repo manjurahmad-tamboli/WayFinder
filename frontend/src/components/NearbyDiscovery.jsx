@@ -8,12 +8,15 @@ import { useDistance } from "../contexts/DistanceContext";
 import { createRoute, getCategories, getLocations, getNearbyLocations } from "../services/api";
 import { createCampusOrigin, requestGpsOrigin, resolveGpsFailureOrigin } from "../services/distanceUtils";
 import SearchResultCard from "./SearchResultCard";
+import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
 
 export default function NearbyDiscovery({ query = "", onClose }) {
   const navigate = useNavigate();
   const { dispatchMapAction } = useMapActions();
   const { origin, campusReference, setOrigin, setReferenceLocations, ensureCampusReference } = useDistance();
   const [categories, setCategories] = useState([]);
+  const [categoriesError, setCategoriesError] = useState("");
+  const [categoriesRetry, setCategoriesRetry] = useState(0);
   const [category, setCategory] = useState("");
   const [manualMode, setManualMode] = useState(false);
   const [manualLocations, setManualLocations] = useState([]);
@@ -24,14 +27,22 @@ export default function NearbyDiscovery({ query = "", onClose }) {
   const [navigatingId, setNavigatingId] = useState(null);
   const [sortBy, setSortBy] = useState("distance");
   const requestNumber = useRef(0);
+  const manualLocationsRequest = useRef(null);
 
   useEffect(() => {
-    let active = true;
-    getCategories()
-      .then(({ data }) => { if (active) setCategories(data); })
-      .catch(() => { if (active) setCategories([]); });
-    return () => { active = false; };
-  }, []);
+    const controller = new AbortController();
+    setCategoriesError("");
+    getCategories({ signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setCategories(data); })
+      .catch((requestError) => {
+        if (!controller.signal.aborted && !isRequestCanceled(requestError)) {
+          setCategoriesError(getApiErrorMessage(requestError, "Categories could not be loaded."));
+        }
+      });
+    return () => controller.abort();
+  }, [categoriesRetry]);
+
+  useEffect(() => () => manualLocationsRequest.current?.abort(), []);
 
   useEffect(() => {
     if (!origin) return undefined;
@@ -52,8 +63,8 @@ export default function NearbyDiscovery({ query = "", onClose }) {
         });
         if (requestNumber.current === requestId) setLocations(data);
       } catch (requestError) {
-        if (requestError.name !== "CanceledError" && requestError.code !== "ERR_CANCELED" && requestNumber.current === requestId) {
-          setError("Nearby places could not be loaded. Check your connection and try again.");
+        if (!isRequestCanceled(requestError) && requestNumber.current === requestId) {
+          setError(getApiErrorMessage(requestError, "Nearby places could not be loaded."));
           setLocations([]);
         }
       } finally {
@@ -80,14 +91,21 @@ export default function NearbyDiscovery({ query = "", onClose }) {
     setOrigin(null);
     setError("");
     if (manualLocations.length || manualLoading) return;
+    const controller = new AbortController();
+    manualLocationsRequest.current = controller;
     setManualLoading(true);
-    getLocations()
+    getLocations(undefined, { signal: controller.signal })
       .then(({ data }) => {
+        if (controller.signal.aborted) return;
         setManualLocations(data);
         setReferenceLocations(data);
       })
-      .catch(() => setError("Campus starting places could not be loaded. Please retry."))
-      .finally(() => setManualLoading(false));
+      .catch((requestError) => {
+        if (!controller.signal.aborted && !isRequestCanceled(requestError)) {
+          setError(getApiErrorMessage(requestError, "Campus starting places could not be loaded."));
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setManualLoading(false); });
   }
 
   async function requestCurrentLocation() {
@@ -175,7 +193,7 @@ export default function NearbyDiscovery({ query = "", onClose }) {
       onClose?.();
       toast.success("Walking route generated");
     } catch (requestError) {
-      toast.error(requestError.response?.data?.detail || "Unable to generate a route from this start point");
+      toast.error(getApiErrorMessage(requestError, "Unable to generate a route from this start point."));
     } finally {
       setNavigatingId(null);
     }
@@ -220,7 +238,7 @@ export default function NearbyDiscovery({ query = "", onClose }) {
             <option value="">{manualLoading ? "Loading campus places…" : "Choose a starting place"}</option>
             {manualLocations.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
           </select>
-          {error && <p className="nearby-error" role="alert">{error}</p>}
+          {error && <p className="nearby-error" role="alert">{error} <button type="button" className="nearby-inline-retry" onClick={useManualStartingPoint}>Retry</button></p>}
         </div>
       )}
 
@@ -237,6 +255,7 @@ export default function NearbyDiscovery({ query = "", onClose }) {
           </select>
         </div>
       </div>
+      {categoriesError && <p className="nearby-error" role="alert">{categoriesError} <button type="button" className="nearby-inline-retry" onClick={() => setCategoriesRetry((count) => count + 1)}>Retry categories</button></p>}
 
       {error && !manualMode && <p className="nearby-error" role="alert">{error}</p>}
       {!origin || manualMode ? (

@@ -6,7 +6,7 @@ from sqlalchemy.pool import StaticPool
 
 from database.database import Base
 from models import Category, Location
-from routers.locations import autocomplete_locations, get_nearby_locations, search_campus
+from routers.locations import autocomplete_locations, get_location, get_nearby_locations, search_campus
 from schemas.schemas import LocationOut, LocationSearchOut, NearbyLocationOut
 from services.campus_assistant import _search_locations
 from services.location_search import (
@@ -122,6 +122,13 @@ class UniversalLocationSearchTests(unittest.TestCase):
         response = LocationOut.model_validate(invalid).model_dump()
         self.assertIsNone(response["latitude"])
         self.assertEqual(response["longitude"], 74.6)
+
+    def test_missing_location_id_returns_not_found(self):
+        from fastapi import HTTPException
+
+        with self.assertRaises(HTTPException) as raised:
+            get_location(9999, self.db)
+        self.assertEqual(raised.exception.status_code, 404)
 
     def test_nearby_rejects_invalid_origin_coordinates(self):
         with self.assertRaises(ValueError):

@@ -12,6 +12,17 @@ from urllib.error import HTTPError, URLError
 from urllib.request import Request, urlopen
 
 from schemas.schemas import AIIntentHint, ChatRequest, ChatResponse
+from services.logging_utils import get_logger
+
+
+logger = get_logger("ai_provider")
+
+
+def _log_provider_fallback(operation: str, error: Exception) -> None:
+    logger.warning(
+        "Optional AI provider failed; using the local campus response",
+        extra={"event": f"ai_{operation}_fallback", "error_type": type(error).__name__},
+    )
 
 
 def _provider_config() -> tuple[str, str, str] | None:
@@ -89,7 +100,8 @@ def classify_intent(
         if not isinstance(content, str):
             return None
         suggestion = AIIntentHint.model_validate_json(content)
-    except Exception:
+    except Exception as error:
+        _log_provider_fallback("intent", error)
         return None
 
     allowed_names = {name.casefold() for name in candidate_location_names}
@@ -143,9 +155,11 @@ def _request_provider(
         answer = response_data["choices"][0]["message"]["content"]
         if isinstance(answer, str) and answer.strip():
             return answer.strip()[:1200]
-    except (HTTPError, URLError, TimeoutError, ValueError, KeyError, IndexError, TypeError, OSError):
+    except (HTTPError, URLError, TimeoutError, ValueError, KeyError, IndexError, TypeError, OSError) as error:
+        _log_provider_fallback("response", error)
         return None
-    except Exception:
+    except Exception as error:
+        _log_provider_fallback("response", error)
         return None
     return None
 

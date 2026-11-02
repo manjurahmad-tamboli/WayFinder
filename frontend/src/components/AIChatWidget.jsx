@@ -7,6 +7,7 @@ import { useMapActions } from "../contexts/MapActionContext";
 import FavoriteButton from "./FavoriteButton";
 import ShareLocationButton from "./ShareLocationButton";
 import DistanceLabel from "./DistanceLabel";
+import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
 
 const WELCOME_TEXT = "Hello! I'm your AI Campus Assistant. I can help you find departments, buildings, facilities and directions around your campus. What are you looking for today?";
 const SUGGESTIONS = [
@@ -67,18 +68,22 @@ export default function AIChatWidget() {
   const [showLocationPicker, setShowLocationPicker] = useState(false);
   const [locationOptions, setLocationOptions] = useState([]);
   const [locationsLoading, setLocationsLoading] = useState(false);
+  const [locationPickerError, setLocationPickerError] = useState("");
   const [selectedManualId, setSelectedManualId] = useState("");
   const conversationRef = useRef(null);
   const textareaRef = useRef(null);
+  const locationRequestController = useRef(null);
 
   useEffect(() => {
     if (!isOpen) return undefined;
-    let active = true;
-    getAssistantHealth()
-      .then(({ data }) => { if (active && data.available) setServiceStatus("online"); })
-      .catch(() => { if (active) setServiceStatus("offline"); });
-    return () => { active = false; };
+    const controller = new AbortController();
+    getAssistantHealth({ signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setServiceStatus(data.available ? "online" : "offline"); })
+      .catch((error) => { if (!controller.signal.aborted && !isRequestCanceled(error)) setServiceStatus("offline"); });
+    return () => controller.abort();
   }, [isOpen]);
+
+  useEffect(() => () => locationRequestController.current?.abort(), []);
 
   useEffect(() => {
     conversationRef.current?.scrollTo({ top: conversationRef.current.scrollHeight, behavior: "smooth" });
@@ -97,7 +102,7 @@ export default function AIChatWidget() {
     const userMessage = appendUser ? makeMessage("user", text) : null;
     if (userMessage) setMessages((current) => [...current, userMessage]);
     const history = [...messages, ...(userMessage ? [userMessage] : [])]
-      .filter((message) => message.role === "user" || message.id !== messages[0]?.id)
+      .filter((message) => !message.error && message.id !== messages[0]?.id)
       .slice(-12)
       .map(({ role, content }) => ({ role, content }));
     const positionIntent = /\b(near|nearby|nearest|closest|around me|route to|directions to|take me|how can i reach)\b/i.test(text);
@@ -123,9 +128,15 @@ export default function AIChatWidget() {
       }
       setMessages((current) => [...current, makeMessage("assistant", data.answer, { response: data, requestText: text })]);
     } catch (error) {
-      const detail = error.response?.data?.detail;
       setServiceStatus("offline");
-      setMessages((current) => [...current, makeMessage("assistant", detail || "I can’t reach the campus assistant right now. Check that the WayFinder API is running, then retry your message.", { error: true, retryText: text })]);
+      const assistantMessage = error?.response?.status >= 500
+        ? "The campus assistant is temporarily unavailable. Your conversation is still here; please retry."
+        : error?.code === "ECONNABORTED" || error?.code === "ETIMEDOUT"
+          ? "WayFinder AI took too long to respond. Your conversation is still here; please retry."
+          : !error?.response
+            ? "Couldn’t reach WayFinder AI. Check your connection and retry; your conversation is still here."
+            : getApiErrorMessage(error, "WayFinder AI could not answer just now. Please retry.");
+      setMessages((current) => [...current, makeMessage("assistant", assistantMessage, { error: true, retryText: text })]);
     } finally {
       setIsLoading(false);
       requestAnimationFrame(() => textareaRef.current?.focus());
@@ -164,15 +175,22 @@ export default function AIChatWidget() {
   async function showManualLocationPicker() {
     setShowLocationPicker(true);
     if (locationOptions.length || locationsLoading) return;
+    locationRequestController.current?.abort();
+    const controller = new AbortController();
+    locationRequestController.current = controller;
+    setLocationPickerError("");
     setLocationsLoading(true);
     try {
-      const { data } = await getLocations();
+      const { data } = await getLocations(undefined, { signal: controller.signal });
+      if (controller.signal.aborted) return;
       setLocationOptions(data);
       if (data.length) setSelectedManualId(String(data[0].id));
-    } catch {
-      setMessages((current) => [...current, makeMessage("assistant", "I couldn’t load the campus place list. You can still retry your GPS request or open the map and choose a starting place there.")]);
+    } catch (error) {
+      if (!controller.signal.aborted && !isRequestCanceled(error)) {
+        setLocationPickerError(getApiErrorMessage(error, "Campus starting places could not be loaded."));
+      }
     } finally {
-      setLocationsLoading(false);
+      if (!controller.signal.aborted) setLocationsLoading(false);
     }
   }
 
@@ -263,7 +281,7 @@ export default function AIChatWidget() {
                         </div>
                       )}
 
-                      {message.error && <button type="button" className="ai-retry-button" onClick={() => sendMessage(message.retryText)}>Retry message</button>}
+                      {message.error && <button type="button" className="ai-retry-button" onClick={() => sendMessage(message.retryText, { appendUser: false })}>Retry message</button>}
                       {message.suggestions?.length > 0 && (
                         <div className="ai-suggestion-list">
                           {message.suggestions.map((suggestion) => <button type="button" key={suggestion} onClick={() => sendMessage(suggestion)}>{suggestion}</button>)}
@@ -279,12 +297,16 @@ export default function AIChatWidget() {
                 <div className="ai-manual-picker">
                   <label htmlFor="ai-campus-start">Search from a campus place</label>
                   <div className="ai-manual-picker-row">
-                    {locationsLoading ? <span>Loading campus places…</span> : (
+                    {locationsLoading ? <span>Loading campus places…</span> : locationPickerError ? (
+                      <span className="ai-picker-error" role="alert">{locationPickerError}</span>
+                    ) : locationOptions.length ? (
                       <select id="ai-campus-start" value={selectedManualId} onChange={(event) => setSelectedManualId(event.target.value)}>
                         {locationOptions.map((place) => <option value={place.id} key={place.id}>{place.name}</option>)}
                       </select>
-                    )}
-                    <button type="button" onClick={continueFromManualPlace} disabled={locationsLoading || !selectedManualId}>Continue</button>
+                    ) : <span>No campus starting places are available.</span>}
+                    {locationPickerError
+                      ? <button type="button" onClick={showManualLocationPicker}>Retry</button>
+                      : <button type="button" onClick={continueFromManualPlace} disabled={locationsLoading || !selectedManualId}>Continue</button>}
                   </div>
                 </div>
               )}

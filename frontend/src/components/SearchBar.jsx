@@ -7,6 +7,7 @@ import NearbyDiscovery from "./NearbyDiscovery";
 import { SearchSuggestion } from "./SearchSuggestion";
 import { useMapActions } from "../contexts/MapActionContext";
 import { getLocationAutocomplete } from "../services/api";
+import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
 
 export default function SearchBar({
   value,
@@ -68,8 +69,8 @@ export default function SearchBar({
         const { data } = await getLocationAutocomplete(searchText, { signal: controller.signal, limit: 8 });
         if (!controller.signal.aborted) setSuggestions({ locations: data.locations || [], categories: data.categories || [] });
       } catch (error) {
-        if (!controller.signal.aborted && error.code !== "ERR_CANCELED") {
-          setSuggestionError("Suggestions are temporarily unavailable.");
+        if (!controller.signal.aborted && !isRequestCanceled(error)) {
+          setSuggestionError(getApiErrorMessage(error, "Suggestions are temporarily unavailable."));
           setSuggestions({ locations: [], categories: [] });
         }
       } finally {

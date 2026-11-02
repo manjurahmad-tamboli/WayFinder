@@ -164,6 +164,15 @@ class CampusAssistantTests(unittest.TestCase):
         self.assertEqual(response.map_action.type, "filter_category")
         self.assertEqual(response.intent, "category_search")
 
+    def test_chat_provider_or_processing_failure_returns_safe_temporary_error(self):
+        from fastapi import HTTPException
+
+        with patch("routers.ai.build_chat_response", side_effect=RuntimeError("secret provider key")):
+            with self.assertRaises(HTTPException) as raised:
+                chat(ChatRequest(message="find the library"), self.db)
+        self.assertEqual(raised.exception.status_code, 503)
+        self.assertNotIn("secret provider key", str(raised.exception.detail))
+
     def test_assistant_health_is_available_without_a_provider_key(self):
         with patch.dict("os.environ", {"AI_API_KEY": "", "AI_MODEL": ""}):
             self.assertEqual(assistant_health(), {"available": True, "mode": "local"})
