@@ -9,6 +9,7 @@ WayFinder is a friendly campus navigation web app built for a college hackathon.
 - Nearby discovery for any saved location/category, using browser GPS on request or a manually selected campus starting point, with Haversine distances
 - Search suggestions with category matches, keyboard selection, highlighted terms, map focus and route-planning actions
 - Favorites saved per browser in localStorage, synchronized across cards, map popups, AI results and the dedicated Favorites page
+- Persistent Light/Dark theme toggle with system-preference support and coordinated map controls
 - Location pages with image, opening hours, category, and coordinates
 - Dijkstra shortest-path routing on a weighted campus walkway graph, including route geometry, estimated distance and time, and turn-by-turn guidance
 - Toast notifications for search, navigation, feedback, and errors

@@ -1,6 +1,7 @@
 import { NavLink } from "react-router-dom";
-import { Heart } from "lucide-react";
+import { Heart, Moon, Sun } from "lucide-react";
 import { useFavorites } from "../contexts/FavoritesContext";
+import { useTheme } from "../contexts/ThemeContext";
 
 const navClass = ({ isActive }) => `nav-link${isActive ? " active" : ""}`;
 
@@ -15,6 +16,7 @@ function PinMark() {
 
 export function Navbar() {
   const { favoriteIds } = useFavorites();
+  const { theme, toggleTheme } = useTheme();
   return (
     <header className="site-navbar">
       <nav className="nav-inner" aria-label="Main navigation">
@@ -33,6 +35,17 @@ export function Navbar() {
           <NavLink to="/about" className={navClass}>About</NavLink>
           <NavLink to="/contact" className={navClass}>Contact</NavLink>
         </div>
+        <button
+          type="button"
+          className="theme-toggle"
+          aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+          aria-pressed={theme === "dark"}
+          title={`Current theme: ${theme === "dark" ? "Dark" : "Light"}. Switch theme`}
+          onClick={toggleTheme}
+        >
+          {theme === "dark" ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+          <span>{theme === "dark" ? "Dark" : "Light"}</span>
+        </button>
       </nav>
     </header>
   );
