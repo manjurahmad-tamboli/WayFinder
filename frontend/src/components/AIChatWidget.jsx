@@ -4,6 +4,8 @@ import { Bot, ChevronDown, LocateFixed, MapPin, MessageCircle, Minus, Navigation
 
 import { getAssistantHealth, getLocations, sendAssistantMessage } from "../services/api";
 import { useMapActions } from "../contexts/MapActionContext";
+import FavoriteButton from "./FavoriteButton";
+import ShareLocationButton from "./ShareLocationButton";
 
 const WELCOME_TEXT = "Hello! I'm your AI Campus Assistant. I can help you find departments, buildings, facilities and directions around your campus. What are you looking for today?";
 const SUGGESTIONS = [
@@ -37,6 +39,8 @@ function LocationResult({ location, onShowMap }) {
         <strong>{location.name}</strong>
         <span>{location.category}{location.distance_meters != null ? ` · ${location.distance_meters < 1000 ? `${location.distance_meters} m` : `${(location.distance_meters / 1000).toFixed(1)} km`} away` : ""}</span>
       </div>
+      <FavoriteButton location={location} className="ai-favorite-button" />
+      <ShareLocationButton location={location} className="ai-share-button" />
       <div className="ai-location-actions">
         <button type="button" onClick={() => onShowMap(location)} aria-label={`Show ${location.name} on map`}>Map</button>
         <Link to={`/locations/${location.id}`} aria-label={`View ${location.name} details`}>Details</Link>

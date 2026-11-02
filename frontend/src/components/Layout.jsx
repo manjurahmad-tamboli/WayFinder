@@ -1,4 +1,6 @@
 import { NavLink } from "react-router-dom";
+import { Heart } from "lucide-react";
+import { useFavorites } from "../contexts/FavoritesContext";
 
 const navClass = ({ isActive }) => `nav-link${isActive ? " active" : ""}`;
 
@@ -12,6 +14,7 @@ function PinMark() {
 }
 
 export function Navbar() {
+  const { favoriteIds } = useFavorites();
   return (
     <header className="site-navbar">
       <nav className="nav-inner" aria-label="Main navigation">
@@ -23,6 +26,10 @@ export function Navbar() {
         <div className="nav-links">
           <NavLink to="/" end className={navClass}>Home</NavLink>
           <NavLink to="/map" className={navClass}>Map</NavLink>
+          <NavLink to="/favorites" className={({ isActive }) => `${navClass({ isActive })} nav-favorites`} aria-label={`Favorites${favoriteIds.size ? `, ${favoriteIds.size} saved` : ""}`} title="Favorites">
+            <Heart size={15} aria-hidden="true" /> <span>Favorites</span>
+            {favoriteIds.size > 0 && <span className="nav-favorite-count">{favoriteIds.size}</span>}
+          </NavLink>
           <NavLink to="/about" className={navClass}>About</NavLink>
           <NavLink to="/contact" className={navClass}>Contact</NavLink>
         </div>

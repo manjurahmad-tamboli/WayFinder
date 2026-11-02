@@ -6,6 +6,8 @@ import CampusMap from "../components/CampusMap";
 import Loader from "../components/Loader";
 import Reveal from "../components/Reveal";
 import { getImageUrl, getLocation } from "../services/api";
+import FavoriteButton from "../components/FavoriteButton";
+import ShareLocationButton from "../components/ShareLocationButton";
 
 export default function LocationDetails() {
   const { id } = useParams();
@@ -41,13 +43,17 @@ export default function LocationDetails() {
           <p className="page-lead">{location.description}</p>
           <div className="detail-meta"><span className="detail-meta-icon">◷</span><span><strong>Opening hours</strong><br />{location.opening_hours}</span></div>
           <div className="detail-meta"><span className="detail-meta-icon">⌖</span><span><strong>Coordinates</strong><br />{Number(location.latitude).toFixed(5)}, {Number(location.longitude).toFixed(5)}</span></div>
-          <Link
-            to={`/map?destination=${location.id}`}
-            onClick={() => toast.success("Choose a starting point to navigate")}
-            className="primary-button mt-7 px-5 py-3"
-          >
-            Navigate here <span aria-hidden="true">↗</span>
-          </Link>
+          <div className="location-detail-actions">
+            <FavoriteButton location={location} showLabel className="detail-favorite-button" />
+            <ShareLocationButton location={location} showLabel className="detail-share-button" />
+            <Link
+              to={`/map?destination=${location.id}`}
+              onClick={() => toast.success("Choose a starting point to navigate")}
+              className="primary-button px-5 py-3"
+            >
+              Navigate here <span aria-hidden="true">↗</span>
+            </Link>
+          </div>
         </div>
       </Reveal>
       <Reveal className="detail-map" delay={80}><CampusMap locations={[location]} /></Reveal>

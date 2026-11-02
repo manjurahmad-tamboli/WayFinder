@@ -1,10 +1,16 @@
 import { Link } from "react-router-dom";
 import { getImageUrl } from "../services/api";
+import FavoriteButton from "./FavoriteButton";
+import ShareLocationButton from "./ShareLocationButton";
 
 export default function LocationCard({ location }) {
   return (
     <article className="location-card">
-      <img className="location-image" src={getImageUrl(location.image)} alt={location.name} loading="lazy" />
+      <div className="location-image-frame">
+        <img className="location-image" src={getImageUrl(location.image)} alt={location.name} loading="lazy" />
+        <FavoriteButton location={location} className="favorite-button-overlay" />
+        <ShareLocationButton location={location} className="share-location-overlay" />
+      </div>
       <div className="location-body">
         <p className="location-category">{location.category}</p>
         <h3 className="location-name">{location.name}</h3>

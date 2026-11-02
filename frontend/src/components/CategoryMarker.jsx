@@ -6,6 +6,8 @@ import L from "leaflet";
 
 import CategoryIcon from "./CategoryIcon";
 import { getCategoryStyle } from "./categoryConfig";
+import FavoriteButton from "./FavoriteButton";
+import ShareLocationButton from "./ShareLocationButton";
 
 export default function CategoryMarker({ location, selected = false, openPopup = false, onSelect }) {
   const markerRef = useRef(null);
@@ -43,10 +45,13 @@ export default function CategoryMarker({ location, selected = false, openPopup =
         <strong>{location.name}</strong>
         <br />
         <span>{location.category}</span>
-        <br />
-        <Link to={"/locations/" + location.id} className="map-popup-link">
-          View details
-        </Link>
+        {location.description && <p className="map-popup-description">{location.description}</p>}
+        {location.opening_hours && <p className="map-popup-hours">{location.opening_hours}</p>}
+        <div className="map-popup-actions">
+          <FavoriteButton location={location} className="map-popup-favorite" />
+          <ShareLocationButton location={location} className="map-popup-share" />
+          <Link to={"/locations/" + location.id} className="map-popup-link">View details</Link>
+        </div>
       </Popup>
     </Marker>
   );

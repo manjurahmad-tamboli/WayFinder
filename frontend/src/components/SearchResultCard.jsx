@@ -4,6 +4,8 @@ import CategoryIcon from "./CategoryIcon";
 import { getCategoryStyle } from "./categoryConfig";
 import { formatDistance } from "./SearchSuggestion";
 import { getImageUrl } from "../services/api";
+import FavoriteButton from "./FavoriteButton";
+import ShareLocationButton from "./ShareLocationButton";
 
 export default function SearchResultCard({ location, distanceMeters, onViewMap, onNavigate, navigating = false, className = "" }) {
   const [imageFailed, setImageFailed] = useState(false);
@@ -35,6 +37,8 @@ export default function SearchResultCard({ location, distanceMeters, onViewMap, 
         </div>
       </div>
       <div className="nearby-result-actions">
+        <FavoriteButton location={location} className="nearby-favorite-button" />
+        <ShareLocationButton location={location} className="nearby-share-button" />
         <button type="button" className="nearby-action secondary-button" onClick={() => onViewMap(location)}>
           <MapPinned size={14} /> Map
         </button>
