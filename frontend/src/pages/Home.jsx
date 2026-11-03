@@ -3,17 +3,21 @@ import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import CampusMap from "../components/CampusMap";
-import Loader from "../components/Loader";
 import LocationCard from "../components/LocationCard";
+import { LocationCardSkeleton, MapLoadingSkeleton, SkeletonBlock } from "../components/Skeletons";
 import SearchBar from "../components/SearchBar";
 import { getLocationCategoryConfig } from "../data/locationCategories";
 
 import useLocations from "../hooks/useLocations";
+import useDelayedLoading from "../hooks/useDelayedLoading";
 import { getCategories } from "../services/api";
 
 export default function Home() {
   const { locations, loading, error } = useLocations();
   const [categories, setCategories] = useState([]);
+  const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const showLoading = useDelayedLoading(loading);
+  const showCategoriesLoading = useDelayedLoading(categoriesLoading);
 
   useEffect(() => {
     toast.success("Welcome to WayFinder!");
@@ -22,7 +26,8 @@ export default function Home() {
       .then(({ data }) => {
         setCategories(data);
       })
-      .catch(() => {});
+      .catch(() => {})
+      .finally(() => setCategoriesLoading(false));
   }, []);
 
   return (
@@ -68,12 +73,10 @@ export default function Home() {
           </Link>
         </div>
 
-        {loading ? (
-          <Loader />
-        ) : error ? (
-          <p className="error-banner p-4">
-            {error}
-          </p>
+        {error ? (
+          <p className="error-banner p-4">{error}</p>
+        ) : loading ? (
+          showLoading ? <MapLoadingSkeleton /> : <div role="status" aria-label="Loading campus map" aria-busy="true" className="map-card" />
         ) : (
           <CampusMap locations={locations} />
         )}
@@ -87,8 +90,18 @@ export default function Home() {
             Browse by category
           </h2>
 
-          <div className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6">
-            {categories.map((category) => {
+          <div
+            className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6"
+            role={categoriesLoading && showCategoriesLoading ? "status" : undefined}
+            aria-label={categoriesLoading && showCategoriesLoading ? "Loading categories" : undefined}
+            aria-busy={categoriesLoading || undefined}
+          >
+            {categoriesLoading && showCategoriesLoading ? Array.from({ length: 6 }, (_, index) => (
+              <div key={index} aria-hidden="true" className="category-card p-4 text-center sm:p-5">
+                <SkeletonBlock className="mx-auto h-[52px] w-[52px] rounded-2xl" />
+                <SkeletonBlock className="mx-auto mt-3 h-4 w-20" />
+              </div>
+            )) : !categoriesLoading && categories.map((category) => {
               const { Icon, color } = getLocationCategoryConfig(category.name);
               return (
                 <Link
@@ -128,7 +141,15 @@ export default function Home() {
         </p>
 
         {loading ? (
-          <Loader />
+          showLoading ? (
+            <div role="status" aria-label="Loading popular locations" aria-busy="true" className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
+              {Array.from({ length: 4 }, (_, index) => <LocationCardSkeleton key={index} />)}
+            </div>
+          ) : null
+        ) : error ? (
+          <p className="error-banner mt-5 p-4">Popular locations could not be loaded.</p>
+        ) : locations.length === 0 ? (
+          <p className="empty-state mt-5 p-5">No campus locations are available yet.</p>
         ) : (
           <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
             {locations.slice(0, 4).map((location) => (

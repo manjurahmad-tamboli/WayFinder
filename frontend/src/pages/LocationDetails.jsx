@@ -2,19 +2,36 @@ import { useEffect, useState } from 'react'
 import { Link, useParams } from 'react-router-dom'
 import toast from 'react-hot-toast'
 import CampusMap from '../components/CampusMap'
-import Loader from '../components/Loader'
+import { LocationDetailSkeleton } from '../components/Skeletons'
+import useDelayedLoading from '../hooks/useDelayedLoading'
 import { getLocation, getImageUrl } from '../services/api'
 
 export default function LocationDetails() {
   const { id } = useParams()
 
   const [location, setLocation] = useState(null)
+  const [loading, setLoading] = useState(true)
   const [error, setError] = useState('')
+  const showLoading = useDelayedLoading(loading)
 
   useEffect(() => {
+    let active = true
+    setLocation(null)
+    setLoading(true)
+    setError('')
+
     getLocation(id)
-      .then(({ data }) => setLocation(data))
-      .catch(() => setError('This location could not be found.'))
+      .then(({ data }) => {
+        if (active) setLocation(data)
+      })
+      .catch(() => {
+        if (active) setError('This location could not be found.')
+      })
+      .finally(() => {
+        if (active) setLoading(false)
+      })
+
+    return () => { active = false }
   }, [id])
 
   if (error) {
@@ -28,7 +45,9 @@ export default function LocationDetails() {
     )
   }
 
-  if (!location) return <Loader />
+  if (loading) {
+    return showLoading ? <LocationDetailSkeleton /> : <div aria-busy="true" className="min-h-[65vh]" />
+  }
 
   return (
     <section className="mx-auto max-w-5xl px-4 py-10 sm:py-14">

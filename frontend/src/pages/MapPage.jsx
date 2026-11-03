@@ -3,10 +3,11 @@ import { useSearchParams } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import CampusMap from "../components/CampusMap";
-import Loader from "../components/Loader";
 import LocationCard from "../components/LocationCard";
+import { LocationCardSkeleton, MapLoadingSkeleton } from "../components/Skeletons";
 
 import useLocations from "../hooks/useLocations";
+import useDelayedLoading from "../hooks/useDelayedLoading";
 import {
   createRoute,
   getCategories,
@@ -34,16 +35,22 @@ export default function MapPage() {
   const [selectedMapLocationId, setSelectedMapLocationId] = useState(null);
   const [route, setRoute] = useState(null);
   const [isRouting, setIsRouting] = useState(false);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchError, setSearchError] = useState("");
   const [originMode, setOriginMode] = useState("manual");
   const [gpsPosition, setGpsPosition] = useState(null);
   const [gpsStatus, setGpsStatus] = useState("idle");
   const [gpsError, setGpsError] = useState("");
   const startSelectRef = useRef(null);
   const gpsRequestId = useRef(0);
+  const searchRequestId = useRef(0);
+  const hasSearched = useRef(false);
+  const showLoading = useDelayedLoading(loading);
+  const showSearchLoading = useDelayedLoading(isSearching);
 
   // Load initial locations
   useEffect(() => {
-    setLocations(initial);
+    if (!hasSearched.current) setLocations(initial);
   }, [initial]);
 
   // Load categories
@@ -62,6 +69,10 @@ export default function MapPage() {
     }
   }, [queryParam]);
 
+  useEffect(() => () => {
+    searchRequestId.current += 1;
+  }, []);
+
   // Set destination from URL
   useEffect(() => {
     if (destinationParam) {
@@ -72,16 +83,25 @@ export default function MapPage() {
 
   async function runSearch(value = query) {
     if (!value.trim()) {
+      searchRequestId.current += 1;
+      hasSearched.current = false;
+      setIsSearching(false);
+      setSearchError("");
       setLocations(initial);
       return;
     }
 
+    const requestId = ++searchRequestId.current;
+    hasSearched.current = true;
+    setIsSearching(true);
+    setSearchError("");
     try {
       const { data } = await searchLocations({
         query: value,
         category: category || null,
       });
 
+      if (requestId !== searchRequestId.current) return;
       setLocations(data);
 
       toast.success(
@@ -90,7 +110,11 @@ export default function MapPage() {
           : "No matching locations"
       );
     } catch {
-      toast.error("Search could not be completed");
+      if (requestId === searchRequestId.current) {
+        setSearchError("Search could not be completed. Check your connection and try again.");
+      }
+    } finally {
+      if (requestId === searchRequestId.current) setIsSearching(false);
     }
   }
 
@@ -211,14 +235,6 @@ export default function MapPage() {
     return `${(meters / 1000).toFixed(1)} km`;
   }
 
-  if (loading) {
-    return (
-      <div className="mx-auto max-w-6xl px-4">
-        <Loader />
-      </div>
-    );
-  }
-
   return (
     <section className="mx-auto max-w-6xl px-4 py-10 sm:py-14">
       {/* Header */}
@@ -229,20 +245,27 @@ export default function MapPage() {
         Find a location or plan a walking route between campus locations.
       </p>
 
-      {error && (
-        <p className="error-banner mt-4 p-4">
-          {error}
-        </p>
-      )}
-
       {/* Map & Route Planner */}
       <div className="mt-6 grid gap-6 lg:grid-cols-[1fr_320px]">
-        <CampusMap
-          locations={locations}
-          route={route?.route}
-          selectedLocationId={selectedMapLocationId}
-          onLocationSelect={setSelectedMapLocationId}
-        />
+        {error && locations.length === 0 ? (
+          <div className="map-card flex items-center justify-center p-4">
+            <div role="alert" className="error-banner max-w-md p-5 text-center">
+              <p>{error}</p>
+              <button type="button" onClick={() => window.location.reload()} className="mt-3 font-bold underline underline-offset-2">
+                Retry loading locations
+              </button>
+            </div>
+          </div>
+        ) : loading ? (
+          showLoading ? <MapLoadingSkeleton /> : <div className="map-card" aria-busy="true" />
+        ) : (
+          <CampusMap
+            locations={locations}
+            route={route?.route}
+            selectedLocationId={selectedMapLocationId}
+            onLocationSelect={setSelectedMapLocationId}
+          />
+        )}
 
         <aside className="surface-card h-fit p-5 sm:p-6">
           <p className="eyebrow !text-[0.68rem]">PLAN A WALK</p>
@@ -302,6 +325,7 @@ export default function MapPage() {
               ref={startSelectRef}
               aria-label="Choose starting location"
               className="site-input mt-3 p-3"
+              disabled={loading}
               value={sourceId}
               onChange={(e) => {
                 const value = e.target.value;
@@ -326,6 +350,7 @@ export default function MapPage() {
 
           <select
             className="site-input mt-2 p-3"
+            disabled={loading}
             value={destinationId}
             onChange={(e) => {
                 const value = e.target.value;
@@ -351,7 +376,7 @@ export default function MapPage() {
           {/* Navigate Button */}
           <button
             onClick={navigate}
-            disabled={isRouting || gpsStatus === "loading"}
+            disabled={isRouting || gpsStatus === "loading" || loading}
             className="button-primary mt-4 min-h-11 w-full px-4 py-2"
           >
             {isRouting ? "Finding route…" : "Navigate"}
@@ -410,14 +435,16 @@ export default function MapPage() {
             e.key === "Enter" && runSearch()
           }
           className="site-input px-4 py-2.5 sm:max-w-xs"
+          disabled={loading}
           placeholder="Search locations"
         />
 
         <button
           onClick={() => runSearch()}
+          disabled={isSearching || loading}
           className="button-primary min-h-11 px-5"
         >
-          Search
+          {isSearching ? "Searching…" : "Search"}
         </button>
 
         <select
@@ -428,6 +455,7 @@ export default function MapPage() {
             )
           }
           className="site-input px-4 py-2.5 sm:max-w-xs"
+          disabled={loading}
         >
           <option value="">
             All categories
@@ -444,14 +472,30 @@ export default function MapPage() {
       </div>
 
       {/* Location Cards */}
-      <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
-        {locations.map((location) => (
-          <LocationCard
-            key={location.id}
-            location={location}
-          />
-        ))}
-      </div>
+      {searchError ? (
+        <div role="alert" className="error-banner mt-6 flex flex-col gap-3 p-4 sm:flex-row sm:items-center sm:justify-between">
+          <p>{searchError}</p>
+          <button type="button" onClick={() => runSearch()} className="shrink-0 font-bold underline underline-offset-2">Retry search</button>
+        </div>
+      ) : loading ? (
+        showLoading ? (
+          <div role="status" aria-label="Loading campus locations" aria-busy="true" className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+            {Array.from({ length: 6 }, (_, index) => <LocationCardSkeleton key={index} />)}
+          </div>
+        ) : null
+      ) : isSearching && showSearchLoading ? (
+        <div role="status" aria-label={loading ? "Loading campus locations" : "Searching campus locations"} aria-busy="true" className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {Array.from({ length: 6 }, (_, index) => <LocationCardSkeleton key={index} />)}
+        </div>
+      ) : error && !hasSearched.current ? null : locations.length === 0 ? (
+        <p className="empty-state mt-6 p-5">No locations match this search. Try another name or category.</p>
+      ) : (
+        <div className="mt-6 grid gap-5 sm:grid-cols-2 lg:grid-cols-3">
+          {locations.map((location) => (
+            <LocationCard key={location.id} location={location} />
+          ))}
+        </div>
+      )}
     </section>
   );
 }
