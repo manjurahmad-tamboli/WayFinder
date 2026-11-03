@@ -16,10 +16,10 @@ export default function SearchBar() {
   return (
     <form
       onSubmit={submit}
-      className="flex rounded-xl bg-white p-1.5 shadow-lg"
+      className="flex rounded-2xl border border-white/10 bg-[#17181b] p-1.5 shadow-2xl shadow-black/30"
     >
       <input
-        className="min-w-0 flex-1 rounded-lg px-4 py-2 text-slate-900 placeholder:text-slate-400 outline-none"
+        className="min-w-0 flex-1 rounded-xl bg-transparent px-4 py-2.5 text-white placeholder:text-slate-500 outline-none"
         value={query}
         onChange={(e) => setQuery(e.target.value)}
         placeholder="Search Library, Canteen, Hostel..."
@@ -28,7 +28,7 @@ export default function SearchBar() {
 
       <button
         type="submit"
-        className="rounded-lg bg-blue-600 px-5 py-2 font-semibold text-white hover:bg-blue-700"
+        className="button-primary px-5 py-2.5"
       >
         Search
       </button>

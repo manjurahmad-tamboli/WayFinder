@@ -12,12 +12,13 @@ class CampusNode:
     name: str
     latitude: float
     longitude: float
+    kind: str = "junction"
 
 
 # These points model the main walkable paths between the sample campus locations.
 # Update this small graph when a real campus survey or GIS map becomes available.
 CAMPUS_NODES = {
-    "main_gate": CampusNode("Main Gate Junction", 16.845935, 74.602656),
+    "main_gate": CampusNode("Main Gate Entrance", 16.845935, 74.602656, "entrance"),
     "north_hub": CampusNode("North Campus Walk", 16.845710, 74.602090),
     "central_hub": CampusNode("Central Junction", 16.845350, 74.602180),
     "east_academic": CampusNode("Academic Block Junction", 16.845120, 74.603100),
@@ -44,6 +45,12 @@ PATH_EDGES = (
     ("canteen_walk", "sports_walk"),
 )
 
+# Add a normalized (unordered) pair here only after a closure or access rule is
+# confirmed by the campus. No path is marked closed by default because the public
+# map sources do not provide a current campus-wide restriction list.
+CLOSED_PATH_EDGES: set[frozenset[str]] = set()
+RESTRICTED_PATH_EDGES: set[frozenset[str]] = set()
+
 
 def haversine_meters(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> float:
     radius = 6_371_000
@@ -56,6 +63,9 @@ def haversine_meters(a_lat: float, a_lon: float, b_lat: float, b_lon: float) -> 
 def _build_graph() -> dict[str, list[tuple[str, float]]]:
     graph = {node_id: [] for node_id in CAMPUS_NODES}
     for first, second in PATH_EDGES:
+        edge_key = frozenset((first, second))
+        if edge_key in CLOSED_PATH_EDGES or edge_key in RESTRICTED_PATH_EDGES:
+            continue
         first_node, second_node = CAMPUS_NODES[first], CAMPUS_NODES[second]
         distance = haversine_meters(first_node.latitude, first_node.longitude, second_node.latitude, second_node.longitude)
         graph[first].append((second, distance))
@@ -64,6 +74,8 @@ def _build_graph() -> dict[str, list[tuple[str, float]]]:
 
 
 WALKING_GRAPH = _build_graph()
+MAX_ACCESS_DISTANCE_METERS = 500
+WALKING_SPEED_METERS_PER_MINUTE = 80
 
 
 def closest_node(latitude: float, longitude: float) -> tuple[str, float]:
@@ -76,6 +88,9 @@ def closest_node(latitude: float, longitude: float) -> tuple[str, float]:
 
 def dijkstra_shortest_path(start: str, end: str) -> tuple[list[str], float]:
     """Find the least-distance route in the campus pedestrian graph."""
+    if start not in WALKING_GRAPH or end not in WALKING_GRAPH:
+        raise ValueError("The selected point is not connected to the campus walking network")
+
     queue: list[tuple[float, str]] = [(0, start)]
     distances = {node_id: math.inf for node_id in WALKING_GRAPH}
     previous: dict[str, str] = {}
@@ -127,25 +142,45 @@ def route_directions(
     point_nodes: list[str | None],
     destination_name: str | None,
 ) -> list[str]:
-    directions = ["Start from your selected location."]
-    segment_distances = [haversine_meters(*points[index], *points[index + 1]) for index in range(len(points) - 1)]
+    directions = ["Start at your selected location."]
+    segment_distances = [
+        haversine_meters(*points[index], *points[index + 1])
+        for index in range(len(points) - 1)
+    ]
     if not segment_distances:
-        return directions
+        return [*directions, f"You have reached {destination_name or 'your destination'}."]
 
+    bearings = [
+        bearing_degrees(points[index], points[index + 1])
+        for index in range(len(points) - 1)
+    ]
     destination_label = destination_name or "your destination"
 
     def point_label(index: int) -> str:
         node_id = point_nodes[index]
         return CAMPUS_NODES[node_id].name if node_id else destination_label
 
-    directions.append(f"Go straight for {max(1, round(segment_distances[0]))} m toward {point_label(1)}.")
-    for index in range(1, len(segment_distances)):
-        previous_bearing = bearing_degrees(points[index - 1], points[index])
-        next_bearing = bearing_degrees(points[index], points[index + 1])
-        landmark = point_label(index)
-        directions.append(
-            f"{turn_instruction(previous_bearing, next_bearing)} at {landmark}, then continue for {max(1, round(segment_distances[index]))} m toward {point_label(index + 1)}."
-        )
+    # Combine small bends into one instruction. This keeps the directions readable
+    # while still announcing a turn at a meaningful junction.
+    groups: list[tuple[int, int]] = []
+    group_start = 0
+    for segment_index in range(1, len(segment_distances)):
+        change = (bearings[segment_index] - bearings[segment_index - 1] + 540) % 360 - 180
+        if abs(change) >= 25:
+            groups.append((group_start, segment_index - 1))
+            group_start = segment_index
+    groups.append((group_start, len(segment_distances) - 1))
+
+    for group_index, (first_segment, last_segment) in enumerate(groups):
+        distance = max(1, round(sum(segment_distances[first_segment:last_segment + 1])))
+        target = point_label(last_segment + 1)
+        if group_index == 0:
+            directions.append(f"Walk straight for {distance} m toward {target}.")
+            continue
+
+        turn = turn_instruction(bearings[first_segment - 1], bearings[first_segment])
+        junction = point_label(first_segment)
+        directions.append(f"{turn} at {junction}, then continue for {distance} m toward {target}.")
 
     directions.append(f"You have reached {destination_label}.")
     return directions
@@ -153,9 +188,15 @@ def route_directions(
 
 def campus_route(source: tuple[float, float], destination: tuple[float, float], destination_name: str | None = None) -> tuple[list[list[float]], int, list[str]]:
     """Build a shortest route from access legs plus a Dijkstra graph path."""
+    for latitude, longitude in (source, destination):
+        if not math.isfinite(latitude) or not math.isfinite(longitude):
+            raise ValueError("Coordinates must be finite numbers")
+        if not -90 <= latitude <= 90 or not -180 <= longitude <= 180:
+            raise ValueError("Coordinates are outside the valid latitude/longitude range")
+
     start_node, start_access = closest_node(*source)
     end_node, end_access = closest_node(*destination)
-    if max(start_access, end_access) > 500:
+    if max(start_access, end_access) > MAX_ACCESS_DISTANCE_METERS:
         raise ValueError("A selected point is outside the mapped campus walking network")
 
     path_nodes, graph_distance = dijkstra_shortest_path(start_node, end_node)

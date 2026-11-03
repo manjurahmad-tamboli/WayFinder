@@ -2,7 +2,7 @@ import math
 
 from fastapi import APIRouter, HTTPException
 
-from navigation import campus_route
+from navigation import WALKING_SPEED_METERS_PER_MINUTE, campus_route
 from schemas.schemas import RouteOut, RouteRequest
 
 router = APIRouter(tags=["Navigation"])
@@ -22,6 +22,6 @@ def create_route(payload: RouteRequest):
     return RouteOut(
         route=route,
         distance_meters=distance,
-        walking_minutes=max(1, math.ceil(distance / 80)),
+        walking_minutes=max(1, math.ceil(distance / WALKING_SPEED_METERS_PER_MINUTE)),
         directions=directions,
     )
