@@ -9,6 +9,7 @@ import { createRoute, getCategories, getLocations, getNearbyLocations } from "..
 import { createCampusOrigin, requestGpsOrigin, resolveGpsFailureOrigin } from "../services/distanceUtils";
 import SearchResultCard from "./SearchResultCard";
 import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
+import { getLocationMapUrl } from "../services/mapLinks";
 
 export default function NearbyDiscovery({ query = "", onClose }) {
   const navigate = useNavigate();
@@ -168,12 +169,17 @@ export default function NearbyDiscovery({ query = "", onClose }) {
 
   function viewOnMap(location) {
     dispatchMapAction({ type: "show_location", location_id: location.id });
-    navigate(`/map?focus=${location.id}`);
+    navigate(getLocationMapUrl(location.id));
     onClose?.();
   }
 
   async function navigateTo(location) {
-    if (!origin) return;
+    if (!origin || origin.type === "reference") {
+      dispatchMapAction({ type: "show_location", location_id: location.id });
+      navigate(getLocationMapUrl(location.id, "navigate"));
+      onClose?.();
+      return;
+    }
     setNavigatingId(location.id);
     try {
       const { data } = await createRoute({
@@ -189,7 +195,7 @@ export default function NearbyDiscovery({ query = "", onClose }) {
         source_id: origin.type === "campus" || origin.type === "reference" ? origin.id : null,
         source_is_current: origin.type === "gps",
       });
-      navigate(`/map?destination=${location.id}`);
+      navigate(getLocationMapUrl(location.id));
       onClose?.();
       toast.success("Walking route generated");
     } catch (requestError) {

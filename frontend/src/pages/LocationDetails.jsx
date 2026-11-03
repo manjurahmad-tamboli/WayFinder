@@ -1,7 +1,5 @@
 import { useEffect, useState } from "react";
 import { Link, useParams } from "react-router-dom";
-import toast from "react-hot-toast";
-
 import CampusMap from "../components/CampusMap";
 import Loader from "../components/Loader";
 import Reveal from "../components/Reveal";
@@ -12,6 +10,7 @@ import DistanceLabel from "../components/DistanceLabel";
 import ErrorNotice from "../components/ErrorNotice";
 import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
 import { isValidCoordinates } from "../services/distanceUtils";
+import { getLocationMapUrl } from "../services/mapLinks";
 
 export default function LocationDetails() {
   const { id } = useParams();
@@ -65,8 +64,7 @@ export default function LocationDetails() {
             <FavoriteButton location={location} showLabel className="detail-favorite-button" />
             <ShareLocationButton location={location} showLabel className="detail-share-button" />
             <Link
-              to={`/map?destination=${location.id}`}
-              onClick={() => toast.success("Choose a starting point to navigate")}
+              to={getLocationMapUrl(location.id, "navigate")}
               className="primary-button px-5 py-3"
             >
               Navigate here <span aria-hidden="true">↗</span>

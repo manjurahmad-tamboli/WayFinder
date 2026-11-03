@@ -9,6 +9,7 @@ import useLocations from "../hooks/useLocations";
 import { useFavorites } from "../contexts/FavoritesContext";
 import { useMapActions } from "../contexts/MapActionContext";
 import ErrorNotice from "../components/ErrorNotice";
+import { getLocationMapUrl } from "../services/mapLinks";
 
 export default function Favorites() {
   const navigate = useNavigate();
@@ -27,12 +28,12 @@ export default function Favorites() {
 
   function showOnMap(location) {
     dispatchMapAction({ type: "show_location", location_id: location.id });
-    navigate(`/map?focus=${location.id}`);
+    navigate(getLocationMapUrl(location.id));
   }
 
   function navigateTo(location) {
     dispatchMapAction({ type: "show_location", location_id: location.id });
-    navigate(`/map?destination=${location.id}`);
+    navigate(getLocationMapUrl(location.id, "navigate"));
   }
 
   return (

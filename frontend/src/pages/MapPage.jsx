@@ -10,6 +10,7 @@ import SearchBar from "../components/SearchBar";
 import ErrorNotice from "../components/ErrorNotice";
 import useLocations from "../hooks/useLocations";
 import { createRoute, getCampusSearch, getCategories } from "../services/api";
+import { getLocationMapUrl } from "../services/mapLinks";
 import { useMapActions } from "../contexts/MapActionContext";
 import { useDistance } from "../contexts/DistanceContext";
 import { createCampusOrigin, createGpsOrigin, isValidCoordinates, sortLocationsByDistance } from "../services/distanceUtils";
@@ -23,6 +24,9 @@ export default function MapPage() {
   const category = params.get("category") || "";
   const queryParam = params.get("q") || "";
   const destinationParam = params.get("destination") || "";
+  const focusParam = params.get("focus") || "";
+  const navigateParam = params.get("navigate") || "";
+  const navigateRequest = params.get("request") || "";
   const { locations: initial, loading, error, retry: retryLocations } = useLocations(category || undefined);
   const [locations, setLocations] = useState([]);
   const [categories, setCategories] = useState([]);
@@ -46,6 +50,8 @@ export default function MapPage() {
   const [routeSource, setRouteSource] = useState(null);
   const [routing, setRouting] = useState(false);
   const lastAppliedRouteAction = useRef(null);
+  const lastAutoNavigateRequest = useRef("");
+  const pendingNavigationDestination = useRef(null);
 
   useEffect(() => {
     if (!queryParam) setLocations(initial);
@@ -98,8 +104,17 @@ export default function MapPage() {
     return () => controller.abort();
   }, [category, queryParam, searchRetry]);
   useEffect(() => {
-    if (destinationParam) setDestinationId(destinationParam);
+    if (!destinationParam) return;
+    setDestinationId(destinationParam);
+    setSelectedLocationId(Number(destinationParam) || null);
   }, [destinationParam]);
+  useEffect(() => {
+    const selectedId = Number(focusParam || destinationParam) || null;
+    if (!selectedId || loading) return undefined;
+    if (focusParam) setSelectedLocationId(selectedId);
+    const frame = window.requestAnimationFrame(() => scrollToMap());
+    return () => window.cancelAnimationFrame(frame);
+  }, [destinationParam, focusParam, loading]);
 
   useEffect(() => {
     if (mapAction?.type !== "show_route" || !mapAction.route || lastAppliedRouteAction.current === mapAction.eventId) return;
@@ -142,14 +157,14 @@ export default function MapPage() {
   function showSearchResult(location) {
     dispatchMapAction({ type: "show_location", location_id: location.id });
     setSelectedLocationId(location.id);
-    goTo(`/map?focus=${location.id}`);
+    goTo(getLocationMapUrl(location.id));
   }
 
   function planSearchResult(location) {
     dispatchMapAction({ type: "show_location", location_id: location.id });
     setSelectedLocationId(location.id);
     setDestinationId(String(location.id));
-    goTo(`/map?destination=${location.id}`);
+    goTo(getLocationMapUrl(location.id, "navigate"));
   }
 
   const all = useMemo(() => initial.length ? initial : locations, [initial, locations]);
@@ -175,19 +190,37 @@ export default function MapPage() {
     } else setDistanceOrigin(null);
   }
 
-  function requestCurrentLocation() {
-    if (!navigator.geolocation) {
-      if (campusReference) {
-        setSourceMode("reference");
-        setDistanceOrigin(campusReference);
-        setLocationMessage(`Using ${campusReference.name} as the campus reference point, not your live position.`);
-        toast.error("GPS is unavailable; using the campus reference point");
-      } else {
-        setSourceMode("manual");
-        setDistanceOrigin(null);
-        setLocationMessage("Location is not available in this browser. Choose a campus place below.");
-        toast.error("Location is unavailable. Choose a campus start point instead.");
+  function scrollToMap({ focusStart = false } = {}) {
+    window.requestAnimationFrame(() => {
+      document.getElementById("map-route-planner")?.scrollIntoView({
+        behavior: "smooth",
+        block: "start",
+      });
+      if (focusStart) {
+        window.setTimeout(() => {
+          document.getElementById("route-start")?.focus({ preventScroll: true });
+        }, 450);
       }
+    });
+  }
+
+  function fallbackToManualStart(message, destination = null) {
+    setSourceMode("manual");
+    setSourceId("");
+    setCurrentPosition(null);
+    setDistanceOrigin(null);
+    setRoute(null);
+    setRouteSource(null);
+    setLocationMessage(message + " Choose a campus starting point manually to continue.");
+    setLocating(false);
+    pendingNavigationDestination.current = destination ? Number(destination.id) : null;
+    toast.error(message);
+    scrollToMap({ focusStart: true });
+  }
+
+  function requestCurrentLocation(destination = null) {
+    if (!navigator.geolocation) {
+      fallbackToManualStart("Location is unavailable in this browser.", destination);
       return;
     }
 
@@ -195,49 +228,39 @@ export default function MapPage() {
     setLocationMessage("Requesting your location…");
     navigator.geolocation.getCurrentPosition(
       ({ coords }) => {
-        const gpsOrigin = createGpsOrigin(coords);
+        const gpsOrigin = createGpsOrigin({
+          latitude: coords.latitude,
+          longitude: coords.longitude,
+        });
         if (!gpsOrigin) {
-          setLocating(false);
-          setSourceMode(campusReference ? "reference" : "manual");
-          setDistanceOrigin(campusReference || null);
-          setLocationMessage(campusReference
-            ? `The browser returned invalid coordinates. Using ${campusReference.name} as the campus reference point.`
-            : "The browser returned invalid coordinates. Choose a campus starting place manually.");
+          fallbackToManualStart("The browser returned invalid coordinates.", destination);
           return;
         }
         setCurrentPosition({ latitude: gpsOrigin.latitude, longitude: gpsOrigin.longitude });
         setDistanceOrigin(gpsOrigin);
         setSourceMode("current");
+        setSourceId("");
         setLocationMessage("Using your current position as the route start.");
         setRoute(null);
         setRouteSource(null);
         setLocating(false);
         toast.success("Current location set as your start");
+        if (destination) void createWalkingRouteFrom(gpsOrigin, destination, "current");
       },
       (geolocationError) => {
         const messages = {
-          1: "Location access was denied. Choose a campus starting point manually.",
-          2: "Your location could not be determined. Choose a campus starting point manually.",
-          3: "The location request timed out. Try again or choose a start manually.",
+          1: "Location access was denied.",
+          2: "Your location could not be determined.",
+          3: "The location request timed out.",
         };
-        const message = messages[geolocationError.code] || "Could not get your location. Choose a start manually.";
-        setSourceMode(campusReference ? "reference" : "manual");
-        setCurrentPosition(null);
-        setDistanceOrigin(campusReference || null);
-        setLocationMessage(campusReference
-          ? `${message} Using ${campusReference.name} as the campus reference point, not your live position.`
-          : message);
-        setLocating(false);
-        toast.error(campusReference ? "GPS unavailable; using the campus reference point" : message);
+        fallbackToManualStart(messages[geolocationError.code] || "Could not get your location.", destination);
       },
       { enableHighAccuracy: true, timeout: 10000, maximumAge: 30000 },
     );
   }
 
-  async function createWalkingRoute() {
-    const manualSource = all.find((item) => item.id === Number(sourceId));
-    const destination = all.find((item) => item.id === Number(destinationId));
-    const source = sourceMode === "current" ? currentPosition : sourceMode === "reference" ? campusReference : createCampusOrigin(manualSource);
+  async function createWalkingRouteFrom(source, destination, mode) {
+    if (routing) return;
     if (!source) {
       toast.error("Choose a starting point with valid coordinates");
       return;
@@ -246,28 +269,124 @@ export default function MapPage() {
       toast.error("Choose a destination with valid coordinates");
       return;
     }
-    if (sourceMode === "manual" && manualSource.id === destination.id) {
+    if (source.id != null && Number(source.id) === Number(destination.id)) {
       toast.error("Choose two different locations");
       return;
     }
+
     setRouting(true);
+    setRoute(null);
     try {
       const { data } = await createRoute({
         source: { latitude: source.latitude, longitude: source.longitude },
         destination: { latitude: destination.latitude, longitude: destination.longitude },
-        source_name: sourceMode === "current" ? "Your current location" : source.name,
+        source_name: mode === "current" ? "Your current location" : source.name || "Chosen campus place",
         destination_name: destination.name,
       });
       setRoute(data);
       setRouteSource("manual");
       setSelectedLocationId(destination.id);
-      toast.success("Shortest route generated");
+      pendingNavigationDestination.current = null;
+      toast.success("Walking route generated");
     } catch (requestError) {
       toast.error(getApiErrorMessage(requestError, "Unable to generate the walking route."));
     } finally {
       setRouting(false);
     }
   }
+
+  async function createWalkingRoute() {
+    const manualSource = all.find((item) => Number(item.id) === Number(sourceId));
+    const destination = all.find((item) => Number(item.id) === Number(destinationId));
+    const source = sourceMode === "current"
+      ? currentPosition
+      : sourceMode === "reference"
+        ? campusReference
+        : createCampusOrigin(manualSource);
+    return createWalkingRouteFrom(source, destination, sourceMode);
+  }
+
+  function beginNavigation(destination) {
+    if (!destination || !isValidCoordinates(destination.latitude, destination.longitude)) {
+      toast.error("This destination does not have valid map coordinates");
+      return;
+    }
+
+    pendingNavigationDestination.current = Number(destination.id);
+    setDestinationId(String(destination.id));
+    setSelectedLocationId(Number(destination.id));
+    setRoute(null);
+    setRouteSource(null);
+
+    if (sourceMode === "manual" && sourceId) {
+      const manualSource = all.find((item) => Number(item.id) === Number(sourceId));
+      const manualOrigin = createCampusOrigin(manualSource);
+      if (manualOrigin) return void createWalkingRouteFrom(manualOrigin, destination, "manual");
+    }
+    if (sourceMode === "current" && currentPosition) {
+      return void createWalkingRouteFrom(currentPosition, destination, "current");
+    }
+    if (sourceMode === "reference" && campusReference) {
+      return void createWalkingRouteFrom(campusReference, destination, "reference");
+    }
+    if (origin?.type === "gps" && isValidCoordinates(origin.latitude, origin.longitude)) {
+      setSourceMode("current");
+      setCurrentPosition({ latitude: origin.latitude, longitude: origin.longitude });
+      setSourceId("");
+      return void createWalkingRouteFrom(origin, destination, "current");
+    }
+    if (origin?.type === "campus" && isValidCoordinates(origin.latitude, origin.longitude)) {
+      setSourceMode("manual");
+      setSourceId(String(origin.id));
+      return void createWalkingRouteFrom(origin, destination, "manual");
+    }
+
+    requestCurrentLocation(destination);
+  }
+
+  function selectManualStartingPoint(nextId) {
+    const start = all.find((item) => Number(item.id) === Number(nextId));
+    const nextOrigin = nextId ? createCampusOrigin(start) : null;
+    setSourceMode("manual");
+    setSourceId(nextId);
+    setDistanceOrigin(nextOrigin);
+    setSelectedLocationId(nextId ? Number(nextId) : null);
+    setLocationMessage("");
+    setRoute(null);
+    if (nextId && !nextOrigin) {
+      toast.error("This place has missing or invalid coordinates");
+      return;
+    }
+
+    const pendingId = pendingNavigationDestination.current;
+    const pendingDestination = pendingId
+      ? all.find((item) => Number(item.id) === pendingId)
+      : null;
+    if (nextOrigin && pendingDestination) {
+      void createWalkingRouteFrom(nextOrigin, pendingDestination, "manual");
+    }
+  }
+
+  useEffect(() => {
+    if (loading || navigateParam !== "1" || !navigateRequest) return;
+    const requestKey = String(destinationParam) + ":" + navigateRequest;
+    if (lastAutoNavigateRequest.current === requestKey) return;
+    lastAutoNavigateRequest.current = requestKey;
+
+    const destination = all.find((item) => Number(item.id) === Number(destinationParam));
+    setParams((current) => {
+      const next = new URLSearchParams(current);
+      next.delete("navigate");
+      next.delete("request");
+      return next;
+    }, { replace: true });
+
+    if (!destination) {
+      toast.error("That destination is not available in the campus directory");
+      return;
+    }
+    beginNavigation(destination);
+  }, [all, destinationParam, loading, navigateParam, navigateRequest, setParams]);
 
   if (loading) return <div className="page-wrap"><Loader /></div>;
   if (error) return <section className="page-wrap"><ErrorNotice message={error} onRetry={retryLocations} /></section>;
@@ -285,7 +404,7 @@ export default function MapPage() {
 
       {error && <p className="panel panel-pad text-silver">{error}</p>}
 
-      <Reveal className="route-planner-grid">
+      <Reveal id="map-route-planner" className="route-planner-grid">
         <CampusMap
           locations={locations}
           route={route?.route}
@@ -320,16 +439,7 @@ export default function MapPage() {
           {sourceMode === "manual" ? (
             <>
               <label className="route-label" htmlFor="route-start">Starting place</label>
-              <select id="route-start" className="route-select" value={sourceId} onChange={(event) => {
-                const nextId = event.target.value;
-                const nextLocation = all.find((item) => Number(item.id) === Number(nextId));
-                const nextOrigin = nextId ? createCampusOrigin(nextLocation) : null;
-                setSourceId(nextId);
-                setDistanceOrigin(nextOrigin);
-                setSelectedLocationId(nextId ? Number(nextId) : null);
-                setRoute(null);
-                if (nextId && !nextOrigin) toast.error("This place has missing or invalid coordinates");
-              }}>
+              <select id="route-start" className="route-select" value={sourceId} onChange={(event) => selectManualStartingPoint(event.target.value)}>
                 <option value="">Choose starting point</option>
                 {all.map((item) => <option key={item.id} value={item.id}>{item.name}</option>)}
               </select>
