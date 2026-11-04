@@ -1,6 +1,8 @@
 import { useState } from "react";
 import toast from "react-hot-toast";
 import { sendContact } from "../services/api";
+import Reveal from "../components/Reveal";
+import { getApiErrorMessage } from "../services/apiErrors";
 
 const initial = {
   name: "",
@@ -29,43 +31,41 @@ export default function Contact() {
       setForm(initial);
       toast.success("Thanks! Your message has been sent.");
     } catch (error) {
-      toast.error(
-        error.response?.data?.detail ||
-          "Message could not be sent. Please try again."
-      );
+      toast.error(getApiErrorMessage(error, "Message could not be sent. Please try again."));
     } finally {
       setSending(false);
     }
   }
 
   return (
-    <section className="mx-auto max-w-2xl px-4 py-12 sm:py-16">
-      <p className="eyebrow">LET’S TALK</p>
-      <h1 className="mt-2 text-3xl font-bold text-white sm:text-4xl">Contact us</h1>
+    <section className="page-wrap contact-wrap">
+      <p className="eyebrow">Get in touch</p>
+      <h1 className="page-title">Help us make campus easier to explore.</h1>
 
-      <p className="muted-text mt-3 leading-7">
+      <p className="page-lead">
         Have an idea or spotted a campus detail that needs updating? Send us a
         message.
       </p>
 
-      <form
+      <Reveal
+        as="form"
         onSubmit={submit}
-        className="surface-card mt-7 p-5 sm:p-7"
+        className="form-card"
       >
         {/* Name */}
-        <label className="form-label block">
+        <label className="form-label">
           Name
           <input
             required
             name="name"
             value={form.name}
             onChange={change}
-            className="site-input mt-2 p-3"
+            className="form-input"
           />
         </label>
 
         {/* Email */}
-        <label className="form-label mt-5 block">
+        <label className="form-label">
           Email
           <input
             required
@@ -73,12 +73,12 @@ export default function Contact() {
             name="email"
             value={form.email}
             onChange={change}
-            className="site-input mt-2 p-3"
+            className="form-input"
           />
         </label>
 
         {/* Message */}
-        <label className="form-label mt-5 block">
+        <label className="form-label">
           Message
           <textarea
             required
@@ -87,7 +87,7 @@ export default function Contact() {
             value={form.message}
             onChange={change}
             rows={5}
-            className="site-input mt-2 p-3"
+            className="form-input"
           />
         </label>
 
@@ -95,11 +95,11 @@ export default function Contact() {
         <button
           type="submit"
           disabled={sending}
-          className="button-primary mt-5 min-h-11 px-5 py-2 disabled:opacity-60"
+          className="primary-button mt-5 px-5 py-3"
         >
           {sending ? "Sending..." : "Send message"}
         </button>
-      </form>
+      </Reveal>
     </section>
   );
 }

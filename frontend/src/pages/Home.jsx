@@ -3,164 +3,156 @@ import { Link } from "react-router-dom";
 import toast from "react-hot-toast";
 
 import CampusMap from "../components/CampusMap";
+import CategoryIcon from "../components/CategoryIcon";
 import LocationCard from "../components/LocationCard";
+import Reveal from "../components/Reveal";
 import { LocationCardSkeleton, MapLoadingSkeleton, SkeletonBlock } from "../components/Skeletons";
 import SearchBar from "../components/SearchBar";
-import { getLocationCategoryConfig } from "../data/locationCategories";
-
-import useLocations from "../hooks/useLocations";
 import useDelayedLoading from "../hooks/useDelayedLoading";
+import useLocations from "../hooks/useLocations";
 import { getCategories } from "../services/api";
+import { getCategoryStyle } from "../components/categoryConfig";
+import ErrorNotice from "../components/ErrorNotice";
+import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
+
+function RoutePreview() {
+  return (
+    <div className="hero-visual panel">
+      <div className="preview-topline">
+        <span className="live-dot" />
+        <span>Campus route finder</span>
+        <span className="preview-badge">WALKING</span>
+      </div>
+      <div className="preview-map" aria-label="Decorative campus path illustration">
+        <span className="map-label map-label-one">CAMPUS PATH</span>
+        <span className="map-label map-label-two">BUILDINGS</span>
+        <svg viewBox="0 0 520 270" role="img" aria-hidden="true">
+          <path className="map-grid-line" d="M0 55h520M0 135h520M0 215h520M80 0v270M200 0v270M320 0v270M440 0v270" />
+          <path className="campus-route-shadow" d="M52 211 145 211 145 166 224 166 224 116 321 116 321 70 426 70" />
+          <path className="campus-route-line" d="M52 211 145 211 145 166 224 166 224 116 321 116 321 70 426 70" />
+          <circle className="route-point-start" cx="52" cy="211" r="9" />
+          <circle className="route-point-end" cx="426" cy="70" r="9" />
+          <circle className="route-waypoint" cx="145" cy="166" r="5" />
+          <circle className="route-waypoint" cx="224" cy="116" r="5" />
+          <circle className="route-waypoint" cx="321" cy="70" r="5" />
+          <rect className="map-building" x="84" y="54" width="71" height="51" rx="8" />
+          <rect className="map-building" x="263" y="184" width="88" height="46" rx="8" />
+          <rect className="map-building" x="370" y="136" width="73" height="43" rx="8" />
+        </svg>
+        <span className="preview-point-label start-label">START</span>
+        <span className="preview-point-label end-label">DESTINATION</span>
+      </div>
+      <div className="preview-footer">
+        <div><span className="preview-number">01</span><span>Choose a place</span></div>
+        <div><span className="preview-number">02</span><span>Get a walking route</span></div>
+        <div><span className="preview-number">03</span><span>Arrive with confidence</span></div>
+      </div>
+    </div>
+  );
+}
 
 export default function Home() {
-  const { locations, loading, error } = useLocations();
+  const { locations, loading, error, retry: retryLocations } = useLocations();
   const [categories, setCategories] = useState([]);
   const [categoriesLoading, setCategoriesLoading] = useState(true);
+  const [categoriesError, setCategoriesError] = useState("");
+  const [categoriesRetry, setCategoriesRetry] = useState(0);
   const showLoading = useDelayedLoading(loading);
   const showCategoriesLoading = useDelayedLoading(categoriesLoading);
 
   useEffect(() => {
     toast.success("Welcome to WayFinder!");
-
-    getCategories()
-      .then(({ data }) => {
-        setCategories(data);
-      })
-      .catch(() => {})
-      .finally(() => setCategoriesLoading(false));
   }, []);
+
+  useEffect(() => {
+    const controller = new AbortController();
+    setCategoriesError("");
+    setCategoriesLoading(true);
+    getCategories({ signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setCategories(data); })
+      .catch((requestError) => {
+        if (!controller.signal.aborted && !isRequestCanceled(requestError)) {
+          setCategoriesError(getApiErrorMessage(requestError, "Categories could not be loaded."));
+        }
+      })
+      .finally(() => { if (!controller.signal.aborted) setCategoriesLoading(false); });
+    return () => controller.abort();
+  }, [categoriesRetry]);
 
   return (
     <>
-      {/* Hero Section */}
-      <section className="hero-section px-4 py-16 text-white sm:py-20">
-        <div className="hero-content relative z-10 mx-auto max-w-6xl text-center">
-          <p className="eyebrow mb-4">
-            CAMPUS NAVIGATION GUIDE
-          </p>
-
-          <h1 className="mx-auto max-w-4xl text-4xl font-extrabold leading-tight tracking-tight sm:text-5xl lg:text-6xl">
-            Find your way around <span className="accent-text">campus.</span>
-          </h1>
-
-          <p className="silver-text mx-auto mt-5 max-w-2xl leading-7">
-            Search buildings, explore the map, and get simple walking
-            directions in seconds.
-          </p>
-
-          <div className="mx-auto mt-7 max-w-2xl">
-            <SearchBar />
-          </div>
-        </div>
-      </section>
-
-      {/* Campus Map Section */}
-      <section className="mx-auto max-w-6xl px-4 py-12 sm:py-14">
-        <div className="mb-5 flex items-end justify-between gap-4">
-          <div>
-            <p className="eyebrow mb-2">THE CAMPUS, AT A GLANCE</p>
-            <h2 className="text-2xl font-bold text-white">Explore the campus</h2>
-            <p className="muted-text mt-1">
-              Click a marker to discover a place.
+      <section className="home-hero">
+        <div className="hero-content hero-grid">
+          <div className="hero-copy-block">
+            <p className="hero-kicker">Campus navigation guide</p>
+            <h1 className="hero-title">Your campus, <span>within reach.</span></h1>
+            <p className="hero-copy">
+              Find the places that matter, explore the map, and follow a clear walking route to your destination.
             </p>
-          </div>
-
-          <Link
-            to="/map"
-            className="accent-text shrink-0 text-sm font-bold hover:text-white"
-          >
-            Open full map →
-          </Link>
-        </div>
-
-        {error ? (
-          <p className="error-banner p-4">{error}</p>
-        ) : loading ? (
-          showLoading ? <MapLoadingSkeleton /> : <div role="status" aria-label="Loading campus map" aria-busy="true" className="map-card" />
-        ) : (
-          <CampusMap locations={locations} />
-        )}
-      </section>
-
-      {/* Categories Section */}
-      <section className="border-y border-white/5 bg-[#101113] px-4 py-12 sm:py-14">
-        <div className="mx-auto max-w-6xl">
-          <p className="eyebrow mb-2">EXPLORE YOUR WAY</p>
-          <h2 className="text-2xl font-bold text-white">
-            Browse by category
-          </h2>
-
-          <div
-            className="mt-5 grid grid-cols-2 gap-4 sm:grid-cols-3 lg:grid-cols-6"
-            role={categoriesLoading && showCategoriesLoading ? "status" : undefined}
-            aria-label={categoriesLoading && showCategoriesLoading ? "Loading categories" : undefined}
-            aria-busy={categoriesLoading || undefined}
-          >
-            {categoriesLoading && showCategoriesLoading ? Array.from({ length: 6 }, (_, index) => (
-              <div key={index} aria-hidden="true" className="category-card p-4 text-center sm:p-5">
-                <SkeletonBlock className="mx-auto h-[52px] w-[52px] rounded-2xl" />
-                <SkeletonBlock className="mx-auto mt-3 h-4 w-20" />
-              </div>
-            )) : !categoriesLoading && categories.map((category) => {
-              const { Icon, color } = getLocationCategoryConfig(category.name);
-              return (
-                <Link
-                  key={category.id}
-                  to={`/map?category=${encodeURIComponent(category.name)}`}
-                  className="category-card p-4 text-center sm:p-5"
-                >
-                  <span
-                    className="category-icon"
-                    style={{
-                      color,
-                      backgroundColor: `${color}18`,
-                      borderColor: `${color}55`,
-                    }}
-                  >
-                    <Icon size={25} strokeWidth={2.1} aria-hidden="true" />
-                  </span>
-                  <p className="mt-3 font-semibold text-white">
-                    {category.name}
-                  </p>
-                </Link>
-              );
-            })}
-          </div>
-        </div>
-      </section>
-
-      {/* Popular Locations Section */}
-      <section className="mx-auto max-w-6xl px-4 py-12 sm:py-14">
-        <p className="eyebrow mb-2">QUICK ACCESS</p>
-        <h2 className="text-2xl font-bold text-white">
-          Popular locations
-        </h2>
-
-        <p className="muted-text mt-1">
-          The places visitors search for most often.
-        </p>
-
-        {loading ? (
-          showLoading ? (
-            <div role="status" aria-label="Loading popular locations" aria-busy="true" className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-              {Array.from({ length: 4 }, (_, index) => <LocationCardSkeleton key={index} />)}
+            <div className="hero-search"><SearchBar /></div>
+            <div className="hero-meta">
+              <span className="meta-pill"><strong>{locations.length || "—"}</strong> campus places</span>
+              <span className="meta-pill"><strong>{categories.length || "—"}</strong> useful categories</span>
+              <span className="meta-pill">Shortest paths with Dijkstra</span>
             </div>
-          ) : null
-        ) : error ? (
-          <p className="error-banner mt-5 p-4">Popular locations could not be loaded.</p>
-        ) : locations.length === 0 ? (
-          <p className="empty-state mt-5 p-5">No campus locations are available yet.</p>
-        ) : (
-          <div className="mt-5 grid gap-5 sm:grid-cols-2 lg:grid-cols-4">
-            {locations.slice(0, 4).map((location) => (
-              <LocationCard
-                key={location.id}
-                location={location}
-              />
-            ))}
+          </div>
+          <RoutePreview />
+        </div>
+      </section>
+
+      <Reveal as="section" className="page-section">
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Get your bearings</p>
+            <h2 className="section-title">Explore the campus</h2>
+            <p className="section-copy">Select a marker to see details, then plan your route.</p>
+          </div>
+          <Link to="/map" className="inline-link">Open full map <span aria-hidden="true">↗</span></Link>
+        </div>
+        {loading ? (showLoading ? <MapLoadingSkeleton /> : <div className="map-card map-pending" role="status" aria-label="Loading campus map" aria-busy="true" />) : error ? <ErrorNotice message={error} onRetry={retryLocations} /> : <CampusMap locations={locations} />}
+      </Reveal>
+
+      <Reveal as="section" className="page-section section-categories" delay={60}>
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Browse with ease</p>
+            <h2 className="section-title">Find the right category</h2>
+          </div>
+        </div>
+        {categoriesError ? <ErrorNotice message={categoriesError} onRetry={() => setCategoriesRetry((count) => count + 1)} /> : <div className="category-grid" aria-busy={categoriesLoading || undefined}>
+          {categoriesLoading && showCategoriesLoading ? Array.from({ length: 6 }, (_, index) => (
+            <div key={index} className="category-card category-card-skeleton" aria-hidden="true">
+              <SkeletonBlock className="category-skeleton-icon" />
+              <SkeletonBlock className="category-skeleton-label" />
+            </div>
+          )) : categories.map((category) => (
+            <Link key={category.id} to={`/map?category=${encodeURIComponent(category.name)}`} className="category-card">
+              <span
+                className="category-icon"
+                style={{ "--category-color": getCategoryStyle(category.name).color }}
+              >
+                <CategoryIcon category={category.name} size={20} />
+              </span>
+              <span className="category-name">{category.name}</span>
+            </Link>
+          ))}
+        </div>}
+      </Reveal>
+
+      <Reveal as="section" className="page-section" delay={100}>
+        <div className="section-head">
+          <div>
+            <p className="eyebrow">Worth knowing</p>
+            <h2 className="section-title">Popular locations</h2>
+            <p className="section-copy">Explore the places visitors look for most.</p>
+          </div>
+        </div>
+        {loading ? (showLoading ? <div className="location-grid" role="status" aria-label="Loading popular locations" aria-busy="true">{Array.from({ length: 4 }, (_, index) => <LocationCardSkeleton key={index} />)}</div> : null) : error ? <p className="empty-state">Popular locations are unavailable until the campus data connection is restored.</p> : locations.length === 0 ? <p className="empty-state">No campus locations are available yet.</p> : (
+          <div className="location-grid">
+            {locations.slice(0, 4).map((location) => <LocationCard key={location.id} location={location} />)}
           </div>
         )}
-      </section>
+      </Reveal>
     </>
   );
 }

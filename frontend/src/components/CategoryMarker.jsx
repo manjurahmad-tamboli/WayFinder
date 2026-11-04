@@ -1,53 +1,62 @@
-import { useMemo } from "react";
+import { useEffect, useMemo, useRef } from "react";
 import { renderToStaticMarkup } from "react-dom/server";
 import { Link } from "react-router-dom";
 import { Marker, Popup, Tooltip } from "react-leaflet";
 import L from "leaflet";
 
-import { getLocationCategoryConfig } from "../data/locationCategories";
+import CategoryIcon from "./CategoryIcon";
+import { getCategoryStyle } from "./categoryConfig";
+import FavoriteButton from "./FavoriteButton";
+import ShareLocationButton from "./ShareLocationButton";
+import DistanceLabel from "./DistanceLabel";
+import { isValidCoordinates } from "../services/distanceUtils";
 
-function createCategoryIcon(category, selected) {
-  const { Icon, color } = getLocationCategoryConfig(category);
-  const svg = renderToStaticMarkup(
-    <Icon size={19} strokeWidth={2.25} aria-hidden="true" />
-  );
-  const selectedClass = selected ? " category-marker-selected" : "";
+export default function CategoryMarker({ location, selected = false, openPopup = false, onSelect }) {
+  const markerRef = useRef(null);
+  const icon = useMemo(() => {
+    const { color } = getCategoryStyle(location.category);
+    const iconMarkup = renderToStaticMarkup(
+      <CategoryIcon category={location.category} size={19} strokeWidth={2.2} />,
+    );
 
-  return L.divIcon({
-    className: "category-marker-host",
-    html: `<span class="category-marker-bubble${selectedClass}" style="--marker-color:${color}">${svg}</span>`,
-    iconSize: [44, 44],
-    iconAnchor: [22, 41],
-    popupAnchor: [0, -39],
-    tooltipAnchor: [0, -35],
-  });
-}
+    return L.divIcon({
+      className: "category-marker-shell",
+      html: '<span class="category-marker' + (selected ? ' category-marker-selected' : '') + '" style="--marker-color:' + color + '" aria-hidden="true">' + iconMarkup + '</span>',
+      iconSize: [42, 42],
+      iconAnchor: [21, 21],
+      popupAnchor: [0, -20],
+    });
+  }, [location.category, selected]);
 
-export default function CategoryMarker({ location, selected = false, onSelect }) {
-  const position = [Number(location.latitude), Number(location.longitude)];
-  const category = getLocationCategoryConfig(location.category);
-  const icon = useMemo(
-    () => createCategoryIcon(location.category, selected),
-    [location.category, selected]
-  );
+  useEffect(() => {
+    if (openPopup) markerRef.current?.openPopup();
+  }, [openPopup]);
+
+  if (!isValidCoordinates(location.latitude, location.longitude)) return null;
 
   return (
     <Marker
-      position={position}
+      ref={markerRef}
+      position={[Number(location.latitude), Number(location.longitude)]}
       icon={icon}
-      title={location.name}
-      riseOnHover
-      zIndexOffset={selected ? 1000 : 0}
+      zIndexOffset={selected ? 700 : 0}
       eventHandlers={{ click: () => onSelect?.(location.id) }}
     >
-      <Tooltip direction="top" offset={[0, -9]} opacity={0.98}>
+      <Tooltip direction="top" offset={[0, -17]} opacity={1} className="category-marker-tooltip">
         {location.name}
       </Tooltip>
       <Popup>
-        <div className="map-popup-location">
-          <strong>{location.name}</strong>
-          <span style={{ color: category.color }}>{location.category || category.label}</span>
-          <Link to={`/locations/${location.id}`}>View details</Link>
+        <strong>{location.name}</strong>
+        <br />
+        <span>{location.category}</span>
+        <br />
+        <DistanceLabel location={location} showOrigin />
+        {location.description && <p className="map-popup-description">{location.description}</p>}
+        {location.opening_hours && <p className="map-popup-hours">{location.opening_hours}</p>}
+        <div className="map-popup-actions">
+          <FavoriteButton location={location} className="map-popup-favorite" />
+          <ShareLocationButton location={location} className="map-popup-share" />
+          <Link to={"/locations/" + location.id} className="map-popup-link">View details</Link>
         </div>
       </Popup>
     </Marker>

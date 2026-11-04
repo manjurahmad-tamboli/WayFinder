@@ -1,111 +1,84 @@
-import { useEffect, useState } from 'react'
-import { Link, useParams } from 'react-router-dom'
-import toast from 'react-hot-toast'
-import CampusMap from '../components/CampusMap'
-import { LocationDetailSkeleton } from '../components/Skeletons'
-import useDelayedLoading from '../hooks/useDelayedLoading'
-import { getLocation, getImageUrl } from '../services/api'
+import { useEffect, useState } from "react";
+import { Link, useParams } from "react-router-dom";
+import CampusMap from "../components/CampusMap";
+import Loader from "../components/Loader";
+import { LocationDetailSkeleton } from "../components/Skeletons";
+import Reveal from "../components/Reveal";
+import { getImageUrl, getLocation } from "../services/api";
+import FavoriteButton from "../components/FavoriteButton";
+import ShareLocationButton from "../components/ShareLocationButton";
+import DistanceLabel from "../components/DistanceLabel";
+import ErrorNotice from "../components/ErrorNotice";
+import { getApiErrorMessage, isRequestCanceled } from "../services/apiErrors";
+import { isValidCoordinates } from "../services/distanceUtils";
+import { getLocationMapUrl } from "../services/mapLinks";
+import useDelayedLoading from "../hooks/useDelayedLoading";
 
 export default function LocationDetails() {
-  const { id } = useParams()
-
-  const [location, setLocation] = useState(null)
-  const [loading, setLoading] = useState(true)
-  const [error, setError] = useState('')
-  const showLoading = useDelayedLoading(loading)
+  const { id } = useParams();
+  const [location, setLocation] = useState(null);
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState("");
+  const [notFound, setNotFound] = useState(false);
+  const [retryCount, setRetryCount] = useState(0);
+  const showLoading = useDelayedLoading(loading);
 
   useEffect(() => {
-    let active = true
-    setLocation(null)
-    setLoading(true)
-    setError('')
-
-    getLocation(id)
-      .then(({ data }) => {
-        if (active) setLocation(data)
+    const controller = new AbortController();
+    setLocation(null);
+    setLoading(true);
+    setError("");
+    setNotFound(false);
+    getLocation(id, { signal: controller.signal })
+      .then(({ data }) => { if (!controller.signal.aborted) setLocation(data); })
+      .catch((requestError) => {
+        if (!controller.signal.aborted && !isRequestCanceled(requestError)) {
+          setError(getApiErrorMessage(requestError, "This location could not be loaded."));
+          setNotFound(requestError.response?.status === 404);
+        }
       })
-      .catch(() => {
-        if (active) setError('This location could not be found.')
-      })
-      .finally(() => {
-        if (active) setLoading(false)
-      })
-
-    return () => { active = false }
-  }, [id])
+      .finally(() => { if (!controller.signal.aborted) setLoading(false); });
+    return () => controller.abort();
+  }, [id, retryCount]);
 
   if (error) {
     return (
-      <div className="mx-auto max-w-3xl px-4 py-16">
-        <h1 className="text-2xl font-bold text-white">{error}</h1>
-        <Link className="accent-text mt-4 inline-block font-semibold" to="/map">
-          Back to map
-        </Link>
-      </div>
-    )
+      <section className="error-state">
+        <p className="eyebrow">Location details</p>
+        <h1 className="page-title">We couldn’t load this place.</h1>
+        <ErrorNotice message={error} onRetry={notFound ? null : () => setRetryCount((count) => count + 1)} />
+        <Link className="primary-button mt-4 px-5 py-3" to="/map">Back to map</Link>
+      </section>
+    );
   }
 
-  if (loading) {
-    return showLoading ? <LocationDetailSkeleton /> : <div aria-busy="true" className="min-h-[65vh]" />
-  }
+  if (!location) return showLoading ? <LocationDetailSkeleton /> : <div className="page-wrap"><Loader /></div>;
 
   return (
-    <section className="mx-auto max-w-5xl px-4 py-10 sm:py-14">
-
-      <Link className="accent-text text-sm font-semibold hover:text-white" to="/map">
-        ← Back to map
-      </Link>
-
-      <div className="surface-card mt-4 overflow-hidden md:grid md:grid-cols-2">
-
-       <img
-  className="h-72 w-full object-cover md:h-full"
-  src={getImageUrl(location.image)}
-  alt={location.name}
-      />
-
-        <div className="p-6 sm:p-7">
-          <p className="eyebrow !text-[0.7rem] !tracking-[0.14em]">
-            {location.category}
-          </p>
-
-          <h1 className="mt-2 text-3xl font-bold text-white">
-            {location.name}
-          </h1>
-
-          <p className="silver-text mt-4 leading-7">
-            {location.description}
-          </p>
-
-          <dl className="mt-6 space-y-3 border-t border-white/10 pt-5 text-sm text-slate-300">
-            <div>
-              <dt className="font-semibold text-white">Opening hours</dt>
-              <dd className="muted-text mt-1">{location.opening_hours}</dd>
-            </div>
-
-            <div>
-              <dt className="font-semibold text-white">Coordinates</dt>
-              <dd className="muted-text mt-1">
-                {location.latitude.toFixed(5)}, {location.longitude.toFixed(5)}
-              </dd>
-            </div>
-          </dl>
-
-          <Link
-            to={`/map?destination=${location.id}`}
-            onClick={() => toast.success('Choose a starting point to navigate')}
-            className="button-primary mt-6 inline-flex min-h-11 items-center px-5 py-2"
-          >
-            Navigate here
-          </Link>
+    <section className="page-wrap">
+      <Link className="inline-link" to="/map">← Back to campus map</Link>
+      <Reveal as="article" className="location-detail mt-5">
+        <img className="detail-image" src={getImageUrl(location.image)} alt={location.name} />
+        <div className="detail-body">
+          <p className="eyebrow">{location.category}</p>
+          <h1 className="page-title">{location.name}</h1>
+          <p className="page-lead">{location.description}</p>
+          <DistanceLabel location={location} showOrigin />
+          <div className="detail-meta"><span className="detail-meta-icon">◷</span><span><strong>Opening hours</strong><br />{location.opening_hours}</span></div>
+          <div className="detail-meta"><span className="detail-meta-icon">⌖</span><span><strong>Coordinates</strong><br />{isValidCoordinates(location.latitude, location.longitude) ? `${Number(location.latitude).toFixed(5)}, ${Number(location.longitude).toFixed(5)}` : "Not available"}</span></div>
+          <div className="location-detail-actions">
+            <FavoriteButton location={location} showLabel className="detail-favorite-button" />
+            <ShareLocationButton location={location} showLabel className="detail-share-button" />
+            <Link
+              to={getLocationMapUrl(location.id, "navigate")}
+              className="primary-button px-5 py-3"
+            >
+              Navigate here <span aria-hidden="true">↗</span>
+            </Link>
+          </div>
         </div>
-
-      </div>
-
-      <div className="mt-7">
-        <CampusMap locations={[location]} selectedLocationId={location.id} />
-      </div>
-
+      </Reveal>
+      <Reveal className="detail-map" delay={80}><CampusMap locations={[location]} /></Reveal>
     </section>
-  )
+  );
 }

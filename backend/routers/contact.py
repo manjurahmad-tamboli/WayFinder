@@ -1,4 +1,5 @@
 from fastapi import APIRouter, Depends, status
+from sqlalchemy.exc import SQLAlchemyError
 from sqlalchemy.orm import Session
 from database.database import get_db
 from models import ContactMessage
@@ -11,6 +12,10 @@ router = APIRouter(tags=["Contact"])
 def create_contact(payload: ContactCreate, db: Session = Depends(get_db)):
     contact = ContactMessage(**payload.model_dump())
     db.add(contact)
-    db.commit()
-    db.refresh(contact)
+    try:
+        db.commit()
+        db.refresh(contact)
+    except SQLAlchemyError:
+        db.rollback()
+        raise
     return contact

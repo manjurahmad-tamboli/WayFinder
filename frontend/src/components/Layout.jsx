@@ -1,18 +1,23 @@
 import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
-import { Home, Info, Mail, MapPin, Menu, X } from "lucide-react";
+import { Heart, Home, Info, Mail, MapPin, Menu, Moon, Sun, X } from "lucide-react";
+import { useFavorites } from "../contexts/FavoritesContext";
+import { useTheme } from "../contexts/ThemeContext";
 
-const navClass = ({ isActive }) =>
-  `nav-link ${isActive ? "nav-link-active" : ""}`;
+const navClass = ({ isActive }) => `nav-link${isActive ? " active" : ""}`;
 
-const links = [
-  { to: "/", label: "Home", icon: Home, end: true },
-  { to: "/map", label: "Map", icon: MapPin },
-  { to: "/about", label: "About", icon: Info },
-  { to: "/contact", label: "Contact", icon: Mail },
-];
+function PinMark() {
+  return (
+    <svg viewBox="0 0 24 24" fill="none" aria-hidden="true">
+      <path d="M19 10.2c0 5.1-7 11.2-7 11.2S5 15.3 5 10.2a7 7 0 1 1 14 0Z" stroke="currentColor" strokeWidth="1.8" />
+      <circle cx="12" cy="10" r="2.2" stroke="currentColor" strokeWidth="1.8" />
+    </svg>
+  );
+}
 
 export function Navbar() {
+  const { favoriteIds } = useFavorites();
+  const { theme, toggleTheme } = useTheme();
   const [menuOpen, setMenuOpen] = useState(false);
   const menuButtonRef = useRef(null);
   const menuRef = useRef(null);
@@ -21,14 +26,10 @@ export function Navbar() {
     if (!menuOpen) return undefined;
 
     function closeOnOutsidePointer(event) {
-      if (
-        !menuRef.current?.contains(event.target) &&
-        !menuButtonRef.current?.contains(event.target)
-      ) {
+      if (!menuRef.current?.contains(event.target) && !menuButtonRef.current?.contains(event.target)) {
         setMenuOpen(false);
       }
     }
-
     function closeOnEscape(event) {
       if (event.key === "Escape") {
         setMenuOpen(false);
@@ -45,74 +46,74 @@ export function Navbar() {
   }, [menuOpen]);
 
   useEffect(() => {
-    const desktopBreakpoint = window.matchMedia("(min-width: 1025px)");
+    const desktopBreakpoint = window.matchMedia("(min-width: 761px)");
     const closeOnDesktop = (event) => {
       if (event.matches) setMenuOpen(false);
     };
-
     desktopBreakpoint.addEventListener("change", closeOnDesktop);
     return () => desktopBreakpoint.removeEventListener("change", closeOnDesktop);
   }, []);
 
-  function closeMenu() {
-    setMenuOpen(false);
-  }
+  const closeMenu = () => setMenuOpen(false);
 
   return (
-    <header className="site-header sticky top-0 z-30">
-      <nav className="relative mx-auto flex max-w-6xl items-center justify-between px-4 py-3.5">
-        <NavLink
-          to="/"
-          onClick={() => setMenuOpen(false)}
-          className="flex items-center gap-3 text-white"
-          aria-label="WayFinder home"
-        >
-          <span className="brand-mark">W</span>
-          <span className="text-lg font-bold tracking-tight">WayFinder</span>
+    <header className="site-navbar">
+      <nav className="nav-inner" aria-label="Main navigation">
+        <NavLink to="/" onClick={closeMenu} className="brand" aria-label="WayFinder home">
+          <span className="brand-mark"><PinMark /></span>
+          <span>WayFinder</span>
         </NavLink>
 
-        <div className="hidden items-center gap-2 min-[1025px]:flex">
-          {links.map(({ to, label, end }) => (
-            <NavLink key={to} to={to} end={end} className={navClass}>
-              {label}
-            </NavLink>
-          ))}
+        <div ref={menuRef} id="primary-navigation" className={`nav-links${menuOpen ? " is-open" : ""}`}>
+          <NavLink to="/" end className={navClass} onClick={closeMenu} tabIndex={menuOpen || window.innerWidth > 760 ? 0 : -1}>
+            <Home className="mobile-nav-icon" size={18} aria-hidden="true" /><span>Home</span>
+          </NavLink>
+          <NavLink to="/map" className={navClass} onClick={closeMenu} tabIndex={menuOpen || window.innerWidth > 760 ? 0 : -1}>
+            <MapPin className="mobile-nav-icon" size={18} aria-hidden="true" /><span>Map</span>
+          </NavLink>
+          <NavLink
+            to="/favorites"
+            className={({ isActive }) => `${navClass({ isActive })} nav-favorites`}
+            aria-label={`Favorites${favoriteIds.size ? `, ${favoriteIds.size} saved` : ""}`}
+            title="Favorites"
+            onClick={closeMenu}
+            tabIndex={menuOpen || window.innerWidth > 760 ? 0 : -1}
+          >
+            <Heart size={15} aria-hidden="true" /> <span>Favorites</span>
+            {favoriteIds.size > 0 && <span className="nav-favorite-count">{favoriteIds.size}</span>}
+          </NavLink>
+          <NavLink to="/about" className={navClass} onClick={closeMenu} tabIndex={menuOpen || window.innerWidth > 760 ? 0 : -1}>
+            <Info className="mobile-nav-icon" size={18} aria-hidden="true" /><span>About</span>
+          </NavLink>
+          <NavLink to="/contact" className={navClass} onClick={closeMenu} tabIndex={menuOpen || window.innerWidth > 760 ? 0 : -1}>
+            <Mail className="mobile-nav-icon" size={18} aria-hidden="true" /><span>Contact</span>
+          </NavLink>
         </div>
 
-        <button
-          type="button"
-          ref={menuButtonRef}
-          className="menu-toggle min-[1025px]:hidden"
-          aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
-          aria-expanded={menuOpen}
-          aria-controls="mobile-navigation"
-          onClick={() => setMenuOpen((open) => !open)}
-        >
-          {menuOpen ? <X size={21} aria-hidden="true" /> : <Menu size={21} aria-hidden="true" />}
-        </button>
-
-        <ul
-          ref={menuRef}
-          id="mobile-navigation"
-          className={`mobile-nav min-[1025px]:hidden${menuOpen ? " mobile-nav-open" : ""}`}
-          aria-label="Mobile primary navigation"
-          aria-hidden={!menuOpen}
-        >
-          {links.map(({ to, label, icon: Icon, end }) => (
-            <li key={to}>
-              <NavLink
-                to={to}
-                end={end}
-                className={navClass}
-                onClick={closeMenu}
-                tabIndex={menuOpen ? 0 : -1}
-              >
-                <Icon size={19} aria-hidden="true" />
-                <span>{label}</span>
-              </NavLink>
-            </li>
-          ))}
-        </ul>
+        <div className="nav-actions">
+          <button
+            type="button"
+            className="theme-toggle"
+            aria-label={`Switch to ${theme === "dark" ? "light" : "dark"} mode`}
+            aria-pressed={theme === "dark"}
+            title={`Current theme: ${theme === "dark" ? "Dark" : "Light"}. Switch theme`}
+            onClick={toggleTheme}
+          >
+            {theme === "dark" ? <Sun size={17} aria-hidden="true" /> : <Moon size={17} aria-hidden="true" />}
+            <span>{theme === "dark" ? "Dark" : "Light"}</span>
+          </button>
+          <button
+            type="button"
+            ref={menuButtonRef}
+            className="mobile-menu-toggle"
+            aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
+            aria-expanded={menuOpen}
+            aria-controls="primary-navigation"
+            onClick={() => setMenuOpen((open) => !open)}
+          >
+            {menuOpen ? <X size={21} aria-hidden="true" /> : <Menu size={21} aria-hidden="true" />}
+          </button>
+        </div>
       </nav>
     </header>
   );
@@ -120,10 +121,11 @@ export function Navbar() {
 
 export function Footer() {
   return (
-    <footer className="site-footer mt-12">
-      <div className="mx-auto flex max-w-6xl flex-col items-center justify-between gap-2 px-4 py-7 text-center sm:flex-row sm:text-left">
-        <span className="font-semibold text-white">WayFinder</span>
+    <footer className="site-footer">
+      <div className="footer-inner">
+        <span className="footer-brand">WayFinder</span>
         <span>Built for a better campus experience</span>
+        <span>Explore confidently. Arrive easily.</span>
       </div>
     </footer>
   );

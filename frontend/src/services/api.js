@@ -1,53 +1,30 @@
 import axios from 'axios'
+import { getApiErrorMessage, isRequestCanceled } from './apiErrors'
+import { API_TIMEOUT_MS } from './apiConfig.js'
+
+export { API_TIMEOUT_MS } from './apiConfig.js'
 
 export const API_BASE_URL =
-  import.meta.env.VITE_API_BASE_URL ||
+  import.meta.env?.VITE_API_BASE_URL ||
   'http://127.0.0.1:8000'
 
 const api = axios.create({
   baseURL: API_BASE_URL,
+  timeout: API_TIMEOUT_MS,
 })
 
-// Location data changes infrequently. Keep it briefly so route changes and
-// page reloads can render from session cache instead of waiting on the API.
-const CACHE_TTL_MS = 60_000
-const memoryCache = new Map()
-const pendingRequests = new Map()
-
-function cachedGet(key, request) {
-  const memoryEntry = memoryCache.get(key)
-  if (memoryEntry && memoryEntry.expiresAt > Date.now()) {
-    return Promise.resolve({ data: memoryEntry.data })
-  }
-
-  try {
-    const stored = JSON.parse(sessionStorage.getItem(`wayfinder:${key}`) || 'null')
-    if (stored?.expiresAt > Date.now()) {
-      memoryCache.set(key, stored)
-      return Promise.resolve({ data: stored.data })
+api.interceptors.response.use(
+  (response) => response,
+  (error) => {
+    if (!isRequestCanceled(error)) {
+      error.userMessage = getApiErrorMessage(error)
+      error.isWayFinderApiError = true
     }
-  } catch {
-    // Storage can be unavailable in private browsing; use the network instead.
-  }
+    return Promise.reject(error)
+  },
+)
 
-  if (pendingRequests.has(key)) return pendingRequests.get(key)
-
-  const pending = request()
-    .then((response) => {
-      const entry = { data: response.data, expiresAt: Date.now() + CACHE_TTL_MS }
-      memoryCache.set(key, entry)
-      try {
-        sessionStorage.setItem(`wayfinder:${key}`, JSON.stringify(entry))
-      } catch {
-        // The in-memory cache still helps during this app session.
-      }
-      return response
-    })
-    .finally(() => pendingRequests.delete(key))
-
-  pendingRequests.set(key, pending)
-  return pending
-}
+let allLocationsRequest = null
 
 export const getImageUrl = (imagePath) => {
   if (!imagePath) return ''
@@ -73,20 +50,37 @@ export const getImageUrl = (imagePath) => {
   return `${API_BASE_URL}/static/images/${cleanPath}`
 }
 
-export const getLocations = (category) => {
-  const key = `locations:${category || 'all'}`
-  return cachedGet(key, () =>
-    api.get('/locations', {
-      params: category ? { category } : {},
-    })
-  )
+export const getLocations = (category, { signal } = {}) => {
+  if (category || signal) return api.get('/locations', { params: category ? { category } : {}, signal })
+  if (!allLocationsRequest) {
+    allLocationsRequest = api.get('/locations').finally(() => { allLocationsRequest = null })
+  }
+  return allLocationsRequest
 }
 
-export const getLocation = (id) =>
-  cachedGet(`location:${id}`, () => api.get(`/locations/${id}`))
+export const getLocation = (id, { signal } = {}) =>
+  api.get(`/locations/${id}`, { signal })
 
-export const getCategories = () =>
-  cachedGet('categories', () => api.get('/categories'))
+export const getCategories = ({ signal } = {}) =>
+  api.get('/categories', { signal })
+
+export const getLocationAutocomplete = (query, { signal, limit = 8 } = {}) =>
+  api.get('/locations/autocomplete', {
+    params: { q: query, limit },
+    signal,
+  })
+
+export const getCampusSearch = (query, { category, signal, limit = 12 } = {}) =>
+  api.get('/locations/search', {
+    params: { q: query, category, limit },
+    signal,
+  })
+
+export const getNearbyLocations = ({ latitude, longitude, query, category, sortBy = 'distance', signal, limit = 10 }) =>
+  api.get('/locations/nearby', {
+    params: { latitude, longitude, q: query || undefined, category: category || undefined, sort_by: sortBy, limit },
+    signal,
+  })
 
 export const searchLocations = (data) =>
   api.post('/search', data)
@@ -96,3 +90,9 @@ export const createRoute = (data) =>
 
 export const sendContact = (data) =>
   api.post('/contact', data)
+
+export const sendAssistantMessage = (data) =>
+  api.post('/api/ai/chat', data)
+
+export const getAssistantHealth = ({ signal } = {}) =>
+  api.get('/api/ai/health', { signal })
