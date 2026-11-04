@@ -1,18 +1,62 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { NavLink } from "react-router-dom";
+import { Home, Info, Mail, MapPin, Menu, X } from "lucide-react";
 
 const navClass = ({ isActive }) =>
   `nav-link ${isActive ? "nav-link-active" : ""}`;
 
 const links = [
-  { to: "/", label: "Home", end: true },
-  { to: "/map", label: "Explore map" },
-  { to: "/about", label: "About" },
-  { to: "/contact", label: "Contact" },
+  { to: "/", label: "Home", icon: Home, end: true },
+  { to: "/map", label: "Map", icon: MapPin },
+  { to: "/about", label: "About", icon: Info },
+  { to: "/contact", label: "Contact", icon: Mail },
 ];
 
 export function Navbar() {
   const [menuOpen, setMenuOpen] = useState(false);
+  const menuButtonRef = useRef(null);
+  const menuRef = useRef(null);
+
+  useEffect(() => {
+    if (!menuOpen) return undefined;
+
+    function closeOnOutsidePointer(event) {
+      if (
+        !menuRef.current?.contains(event.target) &&
+        !menuButtonRef.current?.contains(event.target)
+      ) {
+        setMenuOpen(false);
+      }
+    }
+
+    function closeOnEscape(event) {
+      if (event.key === "Escape") {
+        setMenuOpen(false);
+        menuButtonRef.current?.focus();
+      }
+    }
+
+    document.addEventListener("pointerdown", closeOnOutsidePointer);
+    document.addEventListener("keydown", closeOnEscape);
+    return () => {
+      document.removeEventListener("pointerdown", closeOnOutsidePointer);
+      document.removeEventListener("keydown", closeOnEscape);
+    };
+  }, [menuOpen]);
+
+  useEffect(() => {
+    const desktopBreakpoint = window.matchMedia("(min-width: 1025px)");
+    const closeOnDesktop = (event) => {
+      if (event.matches) setMenuOpen(false);
+    };
+
+    desktopBreakpoint.addEventListener("change", closeOnDesktop);
+    return () => desktopBreakpoint.removeEventListener("change", closeOnDesktop);
+  }, []);
+
+  function closeMenu() {
+    setMenuOpen(false);
+  }
 
   return (
     <header className="site-header sticky top-0 z-30">
@@ -27,7 +71,7 @@ export function Navbar() {
           <span className="text-lg font-bold tracking-tight">WayFinder</span>
         </NavLink>
 
-        <div className="hidden items-center gap-2 md:flex">
+        <div className="hidden items-center gap-2 min-[1025px]:flex">
           {links.map(({ to, label, end }) => (
             <NavLink key={to} to={to} end={end} className={navClass}>
               {label}
@@ -37,33 +81,38 @@ export function Navbar() {
 
         <button
           type="button"
-          className="menu-toggle md:hidden"
+          ref={menuButtonRef}
+          className="menu-toggle min-[1025px]:hidden"
           aria-label={menuOpen ? "Close navigation menu" : "Open navigation menu"}
           aria-expanded={menuOpen}
+          aria-controls="mobile-navigation"
           onClick={() => setMenuOpen((open) => !open)}
         >
-          {menuOpen ? (
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="m6 6 12 12M18 6 6 18" /></svg>
-          ) : (
-            <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M4 7h16M4 12h16M4 17h16" /></svg>
-          )}
+          {menuOpen ? <X size={21} aria-hidden="true" /> : <Menu size={21} aria-hidden="true" />}
         </button>
 
-        {menuOpen && (
-          <div className="mobile-nav md:hidden">
-            {links.map(({ to, label, end }) => (
+        <ul
+          ref={menuRef}
+          id="mobile-navigation"
+          className={`mobile-nav min-[1025px]:hidden${menuOpen ? " mobile-nav-open" : ""}`}
+          aria-label="Mobile primary navigation"
+          aria-hidden={!menuOpen}
+        >
+          {links.map(({ to, label, icon: Icon, end }) => (
+            <li key={to}>
               <NavLink
-                key={to}
                 to={to}
                 end={end}
                 className={navClass}
-                onClick={() => setMenuOpen(false)}
+                onClick={closeMenu}
+                tabIndex={menuOpen ? 0 : -1}
               >
-                {label}
+                <Icon size={19} aria-hidden="true" />
+                <span>{label}</span>
               </NavLink>
-            ))}
-          </div>
-        )}
+            </li>
+          ))}
+        </ul>
       </nav>
     </header>
   );
